@@ -1,6 +1,7 @@
 """
 Amazon Account Generator - Railway Web App
 Interface mobile-friendly pour générer des comptes Amazon
+Avec support PostgreSQL pour stocker emails, comptes et cookies
 """
 
 import os
@@ -12,6 +13,8 @@ import imaplib
 import email as email_module
 import requests
 import threading
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO, emit
 from bs4 import BeautifulSoup
@@ -32,6 +35,9 @@ IMAP_PASSWORD = os.environ.get('IMAP_PASSWORD', '')
 HEROSMS_API_KEY = os.environ.get('HEROSMS_API_KEY', '')
 HEROSMS_BASE_URL = os.environ.get('HEROSMS_BASE_URL', 'https://hero-sms.com/stubs/handler_api.php')
 
+# PostgreSQL
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+
 # ============== APP FLASK ==============
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'amazon-generator-secret-key')
@@ -50,58 +56,160 @@ current_job = {
 # Lock pour thread-safety
 job_lock = threading.Lock()
 
-# ============== FICHIERS ==============
-EMAILS_FILE = 'emails.txt'
-ACCOUNTS_FILE = 'accounts.txt'
+# ============== DATABASE ==============
+def get_db():
+    """Connexion à PostgreSQL"""
+    if not DATABASE_URL:
+        return None
+    try:
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        return conn
+    except Exception as e:
+        print(f"DB Error: {e}")
+        return None
+
+def init_db():
+    """Initialise les tables PostgreSQL"""
+    conn = get_db()
+    if not conn:
+        print("No DATABASE_URL configured, using file storage")
+        return False
+    
+    try:
+        cur = conn.cursor()
+        
+        # Table emails (emails à utiliser)
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS emails (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                used BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Table accounts (comptes créés)
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS accounts (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                cookies TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("Database initialized successfully")
+        return True
+    except Exception as e:
+        print(f"DB Init Error: {e}")
+        return False
 
 def get_emails_count():
     """Compte les emails disponibles"""
-    try:
-        with open(EMAILS_FILE, 'r') as f:
-            emails = [l.strip() for l in f.readlines() if l.strip()]
-        return len(emails)
-    except:
-        return 0
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) as count FROM emails WHERE used = FALSE")
+            result = cur.fetchone()
+            cur.close()
+            conn.close()
+            return result['count'] if result else 0
+        except:
+            pass
+    return 0
 
 def get_random_email():
     """Prend un email aléatoire de la liste"""
-    try:
-        with open(EMAILS_FILE, 'r') as f:
-            emails = [l.strip() for l in f.readlines() if l.strip()]
-        if emails:
-            return random.choice(emails)
-    except:
-        pass
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT email FROM emails WHERE used = FALSE ORDER BY RANDOM() LIMIT 1")
+            result = cur.fetchone()
+            cur.close()
+            conn.close()
+            return result['email'] if result else None
+        except:
+            pass
     return None
 
 def remove_email(email):
-    """Supprime un email de la liste"""
-    try:
-        with open(EMAILS_FILE, 'r') as f:
-            emails = [l.strip() for l in f.readlines() if l.strip()]
-        emails = [e for e in emails if e != email]
-        with open(EMAILS_FILE, 'w') as f:
-            f.write('\n'.join(emails) + '\n' if emails else '')
-    except:
-        pass
+    """Marque un email comme utilisé"""
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("UPDATE emails SET used = TRUE WHERE email = %s", (email,))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except:
+            pass
 
 def save_account(email, password, cookies_dict):
-    """Sauvegarde le compte créé"""
+    """Sauvegarde le compte créé dans PostgreSQL"""
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cookies_json = json.dumps(cookies_dict) if cookies_dict else '{}'
+            cur.execute('''
+                INSERT INTO accounts (email, password, cookies)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (email) DO UPDATE SET
+                    password = EXCLUDED.password,
+                    cookies = EXCLUDED.cookies
+            ''', (email, password, cookies_json))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"Save account error: {e}")
+    return False
+
+def add_emails_to_db(emails_list):
+    """Ajoute des emails à la base de données"""
+    conn = get_db()
+    if not conn:
+        return 0
+    
     try:
-        os.makedirs('cookies', exist_ok=True)
-        
-        # accounts.txt
-        with open(ACCOUNTS_FILE, 'a') as f:
-            f.write(f'{email}:{password}\n')
-        
-        # cookies JSON
-        email_prefix = email.split('@')[0]
-        with open(f'cookies/{email_prefix}.json', 'w') as f:
-            json.dump(cookies_dict, f, indent=2)
-        
-        return True
+        cur = conn.cursor()
+        added = 0
+        for email in emails_list:
+            try:
+                cur.execute("INSERT INTO emails (email) VALUES (%s) ON CONFLICT DO NOTHING", (email,))
+                if cur.rowcount > 0:
+                    added += 1
+            except:
+                pass
+        conn.commit()
+        cur.close()
+        conn.close()
+        return added
     except:
-        return False
+        return 0
+
+def get_all_accounts():
+    """Récupère tous les comptes créés"""
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT email, password, cookies, created_at FROM accounts ORDER BY created_at DESC")
+            results = cur.fetchall()
+            cur.close()
+            conn.close()
+            return results
+        except:
+            pass
+    return []
 
 # ============== HERO SMS ==============
 def get_french_number():
@@ -616,7 +724,7 @@ def get_stats():
 
 @app.route('/api/emails', methods=['POST'])
 def add_emails():
-    """Ajouter des emails (texte ou fichier)"""
+    """Ajouter des emails à PostgreSQL"""
     try:
         emails_text = request.form.get('emails', '') or request.data.decode('utf-8')
         
@@ -629,24 +737,26 @@ def add_emails():
         if not new_emails:
             return jsonify({'error': 'Aucun email valide trouvé'}), 400
         
-        # Ajouter au fichier
-        with open(EMAILS_FILE, 'a') as f:
-            for email in new_emails:
-                f.write(email + '\n')
+        # Ajouter à PostgreSQL
+        added = add_emails_to_db(new_emails)
         
-        return jsonify({'success': True, 'added': len(new_emails), 'total': get_emails_count()})
+        return jsonify({'success': True, 'added': added, 'total': get_emails_count()})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/accounts')
 def get_accounts():
-    """Liste des comptes créés"""
-    try:
-        with open(ACCOUNTS_FILE, 'r') as f:
-            accounts = [l.strip() for l in f.readlines() if l.strip()]
-        return jsonify({'accounts': accounts, 'count': len(accounts)})
-    except:
-        return jsonify({'accounts': [], 'count': 0})
+    """Liste des comptes créés depuis PostgreSQL"""
+    accounts = get_all_accounts()
+    formatted = []
+    for acc in accounts:
+        formatted.append({
+            'email': acc['email'],
+            'password': acc['password'],
+            'cookies': acc['cookies'],
+            'created_at': str(acc['created_at']) if acc['created_at'] else None
+        })
+    return jsonify({'accounts': formatted, 'count': len(formatted)})
 
 @app.route('/api/start', methods=['POST'])
 def start_generation():
@@ -709,12 +819,9 @@ def handle_get_status():
     })
 
 # ============== MAIN ==============
+# Initialiser la base de données au démarrage
+init_db()
+
 if __name__ == '__main__':
-    # Créer fichiers s'ils n'existent pas
-    if not os.path.exists(EMAILS_FILE):
-        open(EMAILS_FILE, 'w').close()
-    if not os.path.exists(ACCOUNTS_FILE):
-        open(ACCOUNTS_FILE, 'w').close()
-    
     port = int(os.environ.get('PORT', 5000))
     socketio.run(app, host='0.0.0.0', port=port, debug=False)
