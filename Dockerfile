@@ -21,5 +21,5 @@ RUN touch emails.txt accounts.txt
 # Expose port
 EXPOSE 5000
 
-# Run with gunicorn + gevent for websocket support
-CMD ["gunicorn", "--worker-class", "geventwebsocket.gunicorn.workers.GeventWebSocketWorker", "--workers", "1", "--bind", "0.0.0.0:5000", "app:app"]
+# Run with gunicorn
+CMD ["gunicorn", "--worker-class", "gevent", "--workers", "1", "--bind", "0.0.0.0:5000", "--timeout", "120", "app:app"]
