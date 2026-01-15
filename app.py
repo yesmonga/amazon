@@ -712,6 +712,10 @@ def manifest():
         ]
     })
 
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok'})
+
 @app.route('/api/stats')
 def get_stats():
     return jsonify({
@@ -818,8 +822,11 @@ def handle_get_status():
     })
 
 # ============== MAIN ==============
-# Initialiser la base de données au démarrage
-init_db()
+# Initialiser la base de données au démarrage (avec gestion d'erreur)
+try:
+    init_db()
+except Exception as e:
+    print(f"Warning: Could not initialize database: {e}")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
