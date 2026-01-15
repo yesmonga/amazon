@@ -1,0 +1,11 @@
+flask==3.0.0
+flask-socketio==5.3.6
+python-socketio==5.10.0
+python-engineio==4.8.1
+eventlet==0.33.3
+requests==2.31.0
+beautifulsoup4==4.12.2
+curl-cffi==0.5.10
+gunicorn==21.2.0
+gevent==23.9.1
+gevent-websocket==0.10.1
