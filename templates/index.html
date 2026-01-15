@@ -4,113 +4,413 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="theme-color" content="#1a1a2e">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0f0f23">
     <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icon-192.svg">
     <title>Amazon Generator</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #fff;
-            min-height: 100vh;
-            padding: 20px;
+        :root {
+            --bg-primary: #0f0f23;
+            --bg-secondary: #1a1a35;
+            --bg-card: rgba(255,255,255,0.05);
+            --accent: #ff6b35;
+            --accent-glow: rgba(255,107,53,0.3);
+            --success: #00d26a;
+            --warning: #ffc107;
+            --error: #ff4757;
+            --text: #ffffff;
+            --text-muted: rgba(255,255,255,0.6);
         }
-        .container { max-width: 500px; margin: 0 auto; }
-        .header { text-align: center; padding: 20px 0; }
-        .header h1 {
-            font-size: 24px;
-            background: linear-gradient(90deg, #ff6b35, #f7931e);
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        .app {
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 20px;
+            padding-bottom: 100px;
+        }
+        
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 24px 0;
+            position: relative;
+        }
+        
+        .logo {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+        
+        .title {
+            font-size: 22px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), #ffc107);
             -webkit-background-clip: text;
+            background-clip: text;
             -webkit-text-fill-color: transparent;
         }
-        .card {
-            background: rgba(255,255,255,0.1);
+        
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: var(--bg-card);
             border-radius: 16px;
-            padding: 24px;
-            margin: 20px 0;
+            padding: 20px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.08);
         }
-        .stat { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
-        .stat:last-child { border-bottom: none; }
-        .stat-value { font-size: 24px; font-weight: bold; color: #ff6b35; }
-        .tabs { display: flex; gap: 10px; margin: 20px 0; }
-        .tab-btn {
-            flex: 1; padding: 12px; border: none; border-radius: 10px;
-            background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7);
-            font-size: 14px; cursor: pointer;
+        
+        .stat-icon { font-size: 24px; margin-bottom: 8px; }
+        .stat-value { font-size: 32px; font-weight: 700; color: var(--accent); }
+        .stat-label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        
+        /* Tab Navigation */
+        .tabs {
+            display: flex;
+            background: var(--bg-card);
+            border-radius: 14px;
+            padding: 4px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.08);
         }
-        .tab-btn.active { background: rgba(255,107,53,0.3); color: #ff6b35; }
+        
+        .tab {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .tab.active {
+            background: var(--accent);
+            color: white;
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+        
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-        textarea {
-            width: 100%; padding: 12px; border-radius: 8px; border: none;
-            background: rgba(0,0,0,0.3); color: #fff; font-family: monospace;
-            resize: vertical; min-height: 150px;
+        
+        /* Generation Panel */
+        .gen-panel {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 24px;
+            border: 1px solid rgba(255,255,255,0.08);
         }
-        .btn {
-            width: 100%; padding: 16px; border: none; border-radius: 12px;
-            background: linear-gradient(90deg, #ff6b35, #f7931e);
-            color: #fff; font-size: 16px; font-weight: 600; cursor: pointer;
+        
+        .gen-status {
+            text-align: center;
+            padding: 20px 0;
+        }
+        
+        .gen-status-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        .gen-status-text {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .gen-email {
+            font-size: 13px;
+            color: var(--accent);
+            word-break: break-all;
+        }
+        
+        .gen-step {
+            display: inline-block;
+            padding: 6px 14px;
+            background: var(--accent-glow);
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--accent);
+            margin-top: 12px;
+        }
+        
+        /* Start Button */
+        .btn-start {
+            width: 100%;
+            padding: 18px;
+            border: none;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--accent), #ff8c42);
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 20px;
+            box-shadow: 0 8px 25px var(--accent-glow);
+            transition: all 0.3s;
+        }
+        
+        .btn-start:hover { transform: translateY(-2px); }
+        .btn-start:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-stop {
+            background: linear-gradient(135deg, var(--error), #ff6b6b);
+            box-shadow: 0 8px 25px rgba(255,71,87,0.3);
+        }
+        
+        /* Captcha Zone */
+        .captcha-zone {
+            margin-top: 20px;
+            border-radius: 16px;
+            overflow: hidden;
+            background: #fff;
+            display: none;
+        }
+        
+        .captcha-zone.active { display: block; }
+        
+        .captcha-header {
+            background: var(--bg-secondary);
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .captcha-header-icon { font-size: 20px; }
+        .captcha-header-text { font-size: 14px; font-weight: 600; }
+        
+        .captcha-frame {
+            width: 100%;
+            height: 400px;
+            border: none;
+        }
+        
+        /* Logs */
+        .logs {
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.3);
+            border-radius: 12px;
+            padding: 12px;
+        }
+        
+        .log-item {
+            font-size: 12px;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            gap: 8px;
+        }
+        
+        .log-time { color: var(--text-muted); font-family: monospace; }
+        .log-msg { flex: 1; }
+        .log-item.success .log-msg { color: var(--success); }
+        .log-item.error .log-msg { color: var(--error); }
+        .log-item.warning .log-msg { color: var(--warning); }
+        
+        /* Email Tab */
+        .email-form textarea {
+            width: 100%;
+            min-height: 150px;
+            padding: 16px;
+            border: 2px solid rgba(255,255,255,0.1);
+            border-radius: 14px;
+            background: rgba(0,0,0,0.3);
+            color: var(--text);
+            font-family: monospace;
+            font-size: 13px;
+            resize: vertical;
+        }
+        
+        .email-form textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        
+        .btn-add {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 14px;
+            background: var(--success);
+            color: white;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 12px;
+        }
+        
+        .msg {
+            padding: 12px;
+            border-radius: 10px;
+            margin-top: 12px;
+            text-align: center;
+            font-size: 14px;
+        }
+        
+        .msg.success { background: rgba(0,210,106,0.2); color: var(--success); }
+        .msg.error { background: rgba(255,71,87,0.2); color: var(--error); }
+        
+        /* Accounts Tab */
+        .account-card {
+            background: var(--bg-card);
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        
+        .account-email {
+            font-weight: 600;
+            color: var(--accent);
+            font-size: 14px;
+            word-break: break-all;
+        }
+        
+        .account-pass {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            font-family: monospace;
+        }
+        
+        .account-date {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+        
+        .btn-copy {
             margin-top: 10px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            background: var(--accent-glow);
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
         }
-        .account-item {
-            padding: 12px; margin: 8px 0; background: rgba(0,0,0,0.2);
-            border-radius: 8px; word-break: break-all;
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
         }
-        .account-email { font-weight: bold; color: #ff6b35; }
-        .account-pass { font-size: 12px; color: rgba(255,255,255,0.6); margin-top: 4px; }
-        .copy-btn {
-            margin-top: 8px; padding: 6px 12px; background: rgba(255,107,53,0.3);
-            border: none; border-radius: 4px; color: #ff6b35; cursor: pointer; font-size: 11px;
-        }
-        .msg { padding: 10px; margin: 10px 0; border-radius: 8px; text-align: center; }
-        .msg.success { background: rgba(46,204,113,0.3); color: #2ecc71; }
-        .msg.error { background: rgba(231,76,60,0.3); color: #e74c3c; }
+        
+        .empty-icon { font-size: 48px; margin-bottom: 16px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🚀 Amazon Generator</h1>
-        </div>
+    <div class="app">
+        <header class="header">
+            <div class="logo">🚀</div>
+            <h1 class="title">Amazon Generator</h1>
+        </header>
         
-        <div class="card">
-            <div class="stat">
-                <span>📧 Emails disponibles</span>
-                <span class="stat-value" id="emails-count">-</span>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">📧</div>
+                <div class="stat-value" id="emails-count">-</div>
+                <div class="stat-label">Emails dispo</div>
             </div>
-            <div class="stat">
-                <span>✅ Comptes créés</span>
-                <span class="stat-value" id="accounts-count">-</span>
+            <div class="stat-card">
+                <div class="stat-icon">✅</div>
+                <div class="stat-value" id="accounts-count">-</div>
+                <div class="stat-label">Comptes créés</div>
             </div>
         </div>
         
         <div class="tabs">
-            <button class="tab-btn active" onclick="showTab('emails')">📧 Emails</button>
-            <button class="tab-btn" onclick="showTab('accounts')">✅ Comptes</button>
+            <button class="tab active" onclick="showTab('generate')">⚡ Générer</button>
+            <button class="tab" onclick="showTab('emails')">📧 Emails</button>
+            <button class="tab" onclick="showTab('accounts')">✅ Comptes</button>
         </div>
         
-        <div id="tab-emails" class="tab-content active">
-            <div class="card">
-                <h3 style="margin-bottom: 15px;">Ajouter des emails</h3>
-                <textarea id="emails-input" placeholder="Un email par ligne..."></textarea>
-                <button class="btn" onclick="addEmails()">➕ Ajouter</button>
-                <div id="emails-msg"></div>
+        <!-- Generate Tab -->
+        <div id="tab-generate" class="tab-content active">
+            <div class="gen-panel">
+                <div class="gen-status">
+                    <div class="gen-status-icon" id="status-icon">🎯</div>
+                    <div class="gen-status-text" id="status-text">Prêt à générer</div>
+                    <div class="gen-email" id="status-email"></div>
+                    <div class="gen-step" id="status-step" style="display:none;"></div>
+                </div>
+                
+                <button class="btn-start" id="btn-start" onclick="startGeneration()">
+                    🚀 Démarrer la génération
+                </button>
+                
+                <div class="captcha-zone" id="captcha-zone">
+                    <div class="captcha-header">
+                        <span class="captcha-header-icon">🔐</span>
+                        <span class="captcha-header-text">Résous le captcha</span>
+                    </div>
+                    <iframe id="captcha-frame" class="captcha-frame"></iframe>
+                </div>
+                
+                <div class="logs" id="logs" style="display:none;"></div>
             </div>
         </div>
         
+        <!-- Emails Tab -->
+        <div id="tab-emails" class="tab-content">
+            <div class="gen-panel">
+                <h3 style="margin-bottom: 16px;">📧 Ajouter des emails</h3>
+                <div class="email-form">
+                    <textarea id="emails-input" placeholder="Un email par ligne...&#10;exemple@icloud.com&#10;test@yvora.fr"></textarea>
+                    <button class="btn-add" onclick="addEmails()">➕ Ajouter les emails</button>
+                    <div id="emails-msg"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Accounts Tab -->
         <div id="tab-accounts" class="tab-content">
-            <div class="card">
-                <h3 style="margin-bottom: 15px;">Comptes créés</h3>
-                <div id="accounts-list"></div>
-            </div>
+            <div id="accounts-list"></div>
         </div>
     </div>
     
     <script>
+        let isGenerating = false;
+        let pollInterval = null;
+        
         function showTab(tab) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
             document.getElementById('tab-' + tab).classList.add('active');
             event.target.classList.add('active');
             if (tab === 'accounts') loadAccounts();
@@ -121,6 +421,127 @@
                 document.getElementById('emails-count').textContent = data.emails_remaining;
                 document.getElementById('accounts-count').textContent = data.accounts_created;
             });
+        }
+        
+        function startGeneration() {
+            if (isGenerating) {
+                fetch('/api/stop', {method: 'POST'});
+                stopPolling();
+                return;
+            }
+            
+            fetch('/api/start', {method: 'POST'})
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    isGenerating = true;
+                    document.getElementById('btn-start').textContent = '⏹️ Arrêter';
+                    document.getElementById('btn-start').classList.add('btn-stop');
+                    document.getElementById('logs').style.display = 'block';
+                    startPolling();
+                }
+            });
+        }
+        
+        function startPolling() {
+            pollInterval = setInterval(pollState, 1000);
+        }
+        
+        function stopPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+            isGenerating = false;
+            document.getElementById('btn-start').textContent = '🚀 Démarrer la génération';
+            document.getElementById('btn-start').classList.remove('btn-stop');
+        }
+        
+        function pollState() {
+            fetch('/api/state').then(r => r.json()).then(state => {
+                updateUI(state);
+                
+                if (!state.active && isGenerating) {
+                    stopPolling();
+                    loadStats();
+                }
+            });
+        }
+        
+        function updateUI(state) {
+            const icons = {
+                'idle': '🎯',
+                'init': '⚡',
+                'get_form': '📄',
+                'post_register': '📝',
+                'cvf': '🔄',
+                'arkose': '🔐',
+                'waiting_captcha': '🧩',
+                'submit_captcha': '✨',
+                'finalize': '🏁',
+                'email_otp': '📬',
+                'sms_otp': '📱',
+                'success': '🎉',
+                'success_partial': '✅',
+                'error': '❌',
+                'stopped': '⏹️'
+            };
+            
+            const texts = {
+                'idle': 'Prêt à générer',
+                'init': 'Initialisation...',
+                'get_form': 'Récupération formulaire...',
+                'post_register': 'Inscription...',
+                'cvf': 'Redirection CVF...',
+                'arkose': 'Chargement captcha...',
+                'waiting_captcha': 'En attente du captcha',
+                'submit_captcha': 'Validation captcha...',
+                'finalize': 'Finalisation...',
+                'email_otp': 'Attente OTP email...',
+                'sms_otp': 'Vérification SMS...',
+                'success': 'Compte créé avec succès!',
+                'success_partial': 'Compte créé (sans tel)',
+                'error': 'Erreur',
+                'stopped': 'Arrêté'
+            };
+            
+            document.getElementById('status-icon').textContent = icons[state.step] || '🔄';
+            document.getElementById('status-text').textContent = texts[state.step] || state.step;
+            
+            if (state.email) {
+                document.getElementById('status-email').textContent = state.email;
+            }
+            
+            if (state.step && state.step !== 'idle') {
+                document.getElementById('status-step').textContent = state.step.toUpperCase();
+                document.getElementById('status-step').style.display = 'inline-block';
+            } else {
+                document.getElementById('status-step').style.display = 'none';
+            }
+            
+            // Captcha zone
+            const captchaZone = document.getElementById('captcha-zone');
+            if (state.step === 'waiting_captcha' && state.captcha_url) {
+                captchaZone.classList.add('active');
+                const frame = document.getElementById('captcha-frame');
+                if (frame.src !== state.captcha_url) {
+                    frame.src = state.captcha_url;
+                }
+            } else {
+                captchaZone.classList.remove('active');
+            }
+            
+            // Logs
+            const logsEl = document.getElementById('logs');
+            if (state.logs && state.logs.length > 0) {
+                logsEl.innerHTML = state.logs.map(log => 
+                    `<div class="log-item ${log.type}">
+                        <span class="log-time">${log.time}</span>
+                        <span class="log-msg">${log.message}</span>
+                    </div>`
+                ).join('');
+                logsEl.scrollTop = logsEl.scrollHeight;
+            }
         }
         
         function addEmails() {
@@ -149,13 +570,18 @@
             fetch('/api/accounts').then(r => r.json()).then(data => {
                 const list = document.getElementById('accounts-list');
                 if (data.accounts.length === 0) {
-                    list.innerHTML = '<p style="color: rgba(255,255,255,0.5);">Aucun compte</p>';
+                    list.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-icon">📭</div>
+                            <p>Aucun compte créé</p>
+                        </div>`;
                 } else {
                     list.innerHTML = data.accounts.map(a => `
-                        <div class="account-item">
+                        <div class="account-card">
                             <div class="account-email">${a.email}</div>
                             <div class="account-pass">MDP: ${a.password}</div>
-                            ${a.cookies ? `<button class="copy-btn" onclick="copyText('${encodeURIComponent(a.cookies)}')">📋 Copier cookies</button>` : ''}
+                            <div class="account-date">${a.created_at || ''}</div>
+                            ${a.cookies ? `<button class="btn-copy" onclick="copyText('${encodeURIComponent(a.cookies)}')">📋 Copier cookies</button>` : ''}
                         </div>
                     `).join('');
                 }
@@ -163,12 +589,44 @@
         }
         
         function copyText(text) {
-            navigator.clipboard.writeText(decodeURIComponent(text));
-            alert('Copié!');
+            navigator.clipboard.writeText(decodeURIComponent(text)).then(() => {
+                alert('Cookies copiés!');
+            });
         }
         
+        // Captcha token listener
+        window.addEventListener('message', function(event) {
+            var data = event.data;
+            if (data && typeof data === 'string' && data.includes('|r=') && !data.startsWith('{')) {
+                fetch('/api/captcha', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({token: data})
+                });
+            }
+            if (data && data.token && typeof data.token === 'string' && data.token.includes('|r=')) {
+                fetch('/api/captcha', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({token: data.token})
+                });
+            }
+        });
+        
+        // Init
         loadStats();
         setInterval(loadStats, 30000);
+        
+        // Check initial state
+        fetch('/api/state').then(r => r.json()).then(state => {
+            if (state.active) {
+                isGenerating = true;
+                document.getElementById('btn-start').textContent = '⏹️ Arrêter';
+                document.getElementById('btn-start').classList.add('btn-stop');
+                document.getElementById('logs').style.display = 'block';
+                startPolling();
+            }
+        });
     </script>
 </body>
 </html>
