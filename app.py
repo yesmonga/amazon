@@ -18,7 +18,6 @@ from psycopg2.extras import RealDictCursor
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO, emit
 from bs4 import BeautifulSoup
-from curl_cffi import requests as curl_requests
 from urllib.parse import quote
 
 # ============== CONFIGURATION (Variables d'environnement) ==============
@@ -366,7 +365,7 @@ def generate_account_thread(email):
         
         # STEP 1: GET
         update_status('get_form')
-        session = curl_requests.Session(impersonate="firefox")
+        session = requests.Session()
         
         form = None
         for attempt in range(5):
