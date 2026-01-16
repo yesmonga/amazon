@@ -1227,10 +1227,15 @@ def run_gen_multi(gen_id):
                     add_gen_log(gen_id, '=== CREATED! ===', 'success')
                     set_gen_step(gen_id, 'success')
             else:
-                save_account_db(email_addr, PASSWORD, dict(session.cookies))
-                mark_email_used(email_addr)
-                add_gen_log(gen_id, '=== CREATED! ===', 'success')
-                set_gen_step(gen_id, 'success')
+                # Verify we're actually on a success page
+                if 'amazon.fr' in rev.url and 'register' not in rev.url and 'cvf' not in rev.url and 'error' not in rev.text.lower():
+                    save_account_db(email_addr, PASSWORD, dict(session.cookies))
+                    mark_email_used(email_addr)
+                    add_gen_log(gen_id, '=== CREATED! ===', 'success')
+                    set_gen_step(gen_id, 'success')
+                else:
+                    add_gen_log(gen_id, f'Unexpected page: {rev.url[:50]}', 'error')
+                    set_gen_step(gen_id, 'error')
         else:
             add_gen_log(gen_id, 'No redirect', 'error')
             set_gen_step(gen_id, 'error')
