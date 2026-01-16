@@ -1119,16 +1119,32 @@ def run_gen_multi(gen_id):
             return
         add_gen_log(gen_id, arkose.group(), 'info')
         
-        arb = loc.split('arb=')[1].split('&')[0] if 'arb=' in loc else ''
-        ra = session.get(f'https://www.amazon.fr/ap/cvf/approval/arkose?arb={arb}&language=fr_FR', headers=get_headers_get(), timeout=30)
-        iframe_m = re.search(r'(https://iframe\.arkoselabs\.com/[^"\']+)', ra.text)
-        if not iframe_m:
-            add_gen_log(gen_id, 'No iframe', 'error')
+        # Get Arkose page with proper options
+        session_id = session.cookies.get('session-id', '')
+        ao = {"clientData": json.dumps({"sessionId": session_id, "marketplaceId": "A13V1IB3VIYZZH", "clientUseCase": "/ap/register"}), "challengeType": arkose.group(), "locale": "fr-FR", "externalId": ''.join(random.choices(string.ascii_uppercase + string.digits, k=20)), "enableHeaderFooter": False, "enableBypassMechanism": False, "enableModalView": False}
+        ark_url = f'https://www.amazon.fr/aaut/verify/cvf?options={quote(json.dumps(ao))}'
+        ha = get_headers_get()
+        ha['Referer'] = loc
+        ra = session.get(ark_url, headers=ha, timeout=30)
+        add_gen_log(gen_id, f'Arkose page: {ra.status_code}', 'info')
+        
+        # Try multiple ways to find iframe
+        soup_a = BeautifulSoup(ra.text, 'html.parser')
+        iframe = soup_a.find('iframe', id='aacb-arkose-frame')
+        iframe_url = None
+        if iframe:
+            iframe_url = iframe.get('src', '')
+        if not iframe_url:
+            m = re.search(r'src="(https://iframe\.arkoselabs\.com/[^"]+)"', ra.text)
+            if m:
+                iframe_url = m.group(1)
+        if not iframe_url:
+            add_gen_log(gen_id, f'No iframe found, page: {ra.text[:100]}', 'error')
             set_gen_step(gen_id, 'error')
             return
         
-        iframe_url = iframe_m.group(1).replace('&amp;', '&')
-        add_gen_log(gen_id, 'Arkose found', 'success')
+        iframe_url = iframe_url.replace('&amp;', '&')
+        add_gen_log(gen_id, 'Arkose iframe found', 'success')
         
         if PLAYWRIGHT_AVAILABLE:
             add_gen_log(gen_id, '=== SOLVE CAPTCHA ===', 'warning')
