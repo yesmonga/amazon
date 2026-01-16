@@ -616,6 +616,7 @@
         // Captcha token listener - improved detection
         var captchaSent = false;
         var detectedToken = null;
+        var challengeComplete = false;
         
         function addCaptchaLog(msg) {
             console.log('[CAPTCHA] ' + msg);
@@ -679,17 +680,32 @@
                 // Type 4: solved event
                 if (data.solved === true || data.event === 'solved' || data.eventId === 'challenge-complete') {
                     addCaptchaLog('Type 4: Solved event detected!');
-                    var token = data.token || data.response || data.sessionToken || (data.data && data.data.token);
+                    challengeComplete = true;
+                    
+                    // Try to find token in various places
+                    var token = data.token || data.response || data.sessionToken || 
+                                (data.data && data.data.token) || 
+                                (data.payload && data.payload.sessionToken) ||
+                                (data.payload && data.payload.token);
+                    
                     if (token && token.includes('|r=')) {
                         sendCaptchaToken(token);
                         return;
                     } else {
-                        addCaptchaLog('Solved but no valid token in event');
+                        addCaptchaLog('Challenge complete! Token will be sent via button.');
+                        // Show button immediately
+                        var btn = document.getElementById('btn-captcha-done');
+                        if (btn) {
+                            btn.classList.add('active');
+                            btn.textContent = '✅ Captcha résolu - Cliquer pour continuer';
+                            btn.style.background = 'linear-gradient(135deg, #00d26a, #00b359)';
+                        }
                     }
                 }
                 // Type 5: Arkose callback
                 if (data.eventId === 'challenge-suppressed' || data.eventId === 'challenge-complete') {
                     addCaptchaLog('Arkose event: ' + data.eventId);
+                    challengeComplete = true;
                     if (data.payload && data.payload.sessionToken) {
                         sendCaptchaToken(data.payload.sessionToken);
                         return;
@@ -709,6 +725,16 @@
                     if (parsed.sessionToken && parsed.sessionToken.includes('|r=')) {
                         sendCaptchaToken(parsed.sessionToken);
                         return;
+                    }
+                    // Check for challenge-complete in parsed JSON
+                    if (parsed.eventId === 'challenge-complete') {
+                        addCaptchaLog('Challenge complete detected in JSON!');
+                        challengeComplete = true;
+                        var btn = document.getElementById('btn-captcha-done');
+                        if (btn) {
+                            btn.classList.add('active');
+                            btn.textContent = '✅ Captcha résolu - Cliquer pour continuer';
+                        }
                     }
                 } catch(e) {}
             }
@@ -737,17 +763,44 @@
         }, 1000);
         
         function manualCaptchaDone() {
-            // Only works if we have a real token
             if (captchaSent) return;
             
+            // If we have a detected token, use it
             if (detectedToken && detectedToken.includes('|r=')) {
-                addCaptchaLog('Manual send of detected token');
+                addCaptchaLog('Sending detected token');
                 sendCaptchaToken(detectedToken);
                 document.getElementById('btn-captcha-done').textContent = '✓ Envoyé!';
                 document.getElementById('btn-captcha-done').style.background = '#666';
+                return;
+            }
+            
+            // If challenge is complete but no token, try to get it from iframe
+            if (challengeComplete) {
+                addCaptchaLog('Challenge complete - requesting token from iframe...');
+                
+                // Try to communicate with iframe
+                var frame = document.getElementById('captcha-frame');
+                if (frame && frame.contentWindow) {
+                    frame.contentWindow.postMessage({action: 'getToken'}, '*');
+                    frame.contentWindow.postMessage('getToken', '*');
+                }
+                
+                // Send a signal to backend that captcha is solved (backend will use stored session)
+                addCaptchaLog('Sending CAPTCHA_SOLVED signal to backend');
+                captchaSent = true;
+                fetch('/api/captcha', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({token: 'CAPTCHA_SOLVED_NO_TOKEN'})
+                }).then(function(r) {
+                    addCaptchaLog('Signal sent: ' + r.status);
+                });
+                
+                document.getElementById('btn-captcha-done').textContent = '✓ Signal envoyé!';
+                document.getElementById('btn-captcha-done').style.background = '#666';
             } else {
-                addCaptchaLog('No valid token detected yet - solve the captcha first!');
-                alert('Aucun token Arkose détecté! Résous le captcha complètement.');
+                addCaptchaLog('Captcha not solved yet!');
+                alert('Résous le captcha d\'abord!');
             }
         }
         
