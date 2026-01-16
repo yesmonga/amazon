@@ -65,6 +65,12 @@ def get_random_proxy():
     return None
 
 
+
+def should_continue(expected_email):
+    """Vérifie si la génération doit continuer (même email, toujours active)"""
+    with state_lock:
+        return generation_state['active'] and generation_state.get('email') == expected_email
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'amazon-secret')
 
@@ -397,16 +403,27 @@ def run_generation():
         set_step('get_form')
         add_log('GET registration form...', 'info')
         url_get = 'https://www.amazon.fr/ap/register?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.fr%2F&openid.assoc_handle=frflex&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.mode=checkid_setup&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&pageId=frflex'
+        rg = None
         for attempt in range(3):
+            if not should_continue(email_addr): 
+                add_log('Generation stopped', 'warning'); return
             try:
+                # Nouveau proxy à chaque retry
+                if attempt > 0:
+                    proxy = get_random_proxy()
+                    if proxy:
+                        session.proxies = proxy
+                        add_log(f'Retry with proxy: {proxy["http"].split("@")[1]}', 'info')
                 rg = session.get(url_get, headers=get_headers_get(), timeout=30)
                 add_log(f'GET form: {rg.status_code}', 'info')
-                if rg.status_code == 200: break
+                if rg.status_code == 200 and 'ap_register_form' in rg.text: break
             except Exception as e:
                 add_log(f'GET error: {str(e)[:30]}', 'warning')
                 time.sleep(2)
         else:
             add_log('GET form failed', 'error'); set_step('error'); return
+        if not rg:
+            add_log('No response', 'error'); set_step('error'); return
         
         soup = BeautifulSoup(rg.text, "html.parser")
         
@@ -518,6 +535,8 @@ def run_generation():
         
         sw = time.time()
         while time.time() - sw < 300:
+            if not should_continue(email_addr):
+                add_log('Generation stopped', 'warning'); return
             # Check captcha solver state for token
             if PLAYWRIGHT_AVAILABLE:
                 solver_state = get_captcha_state()
