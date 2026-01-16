@@ -754,9 +754,11 @@ def get_state():
 @app.route('/api/start', methods=['POST'])
 def start_generation():
     global generation_state
+    # Stop any existing captcha solver
+    if PLAYWRIGHT_AVAILABLE:
+        stop_captcha_solver()
     with state_lock:
-        if generation_state['active']:
-            return jsonify({'error': 'Already running'}), 400
+        # Force reset even if active (user wants fresh start)
         generation_state = {
             'active': True, 'step': 'init', 'email': None, 'customer_name': None,
             'logs': [], 'captcha_url': None, 'captcha_token': None, 'session_data': None, 'error': None
@@ -780,9 +782,15 @@ def submit_captcha():
 @app.route('/api/stop', methods=['POST'])
 def stop_generation():
     global generation_state
+    # Stop captcha solver
+    if PLAYWRIGHT_AVAILABLE:
+        stop_captcha_solver()
     with state_lock:
-        generation_state['active'] = False
-        generation_state['step'] = 'stopped'
+        # Full reset
+        generation_state = {
+            'active': False, 'step': 'stopped', 'email': None, 'customer_name': None,
+            'logs': [], 'captcha_url': None, 'captcha_token': None, 'session_data': None, 'error': None
+        }
     return jsonify({'success': True})
 
 @app.route('/api/emails', methods=['GET', 'POST'])
