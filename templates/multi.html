@@ -328,6 +328,9 @@
         }
         
         function updateState() {
+            // Save scroll position before update
+            var savedScrollY = window.scrollY;
+            
             fetch('/api/multi/state').then(r => r.json()).then(data => {
                 var grid = document.getElementById('generations-grid');
                 var html = '';
@@ -390,6 +393,9 @@
                 
                 grid.innerHTML = html;
                 
+                // Restore main scroll position
+                window.scrollTo(0, savedScrollY);
+                
                 // Auto-scroll logs to bottom
                 document.querySelectorAll('.gen-logs').forEach(function(logsEl) {
                     logsEl.scrollTop = logsEl.scrollHeight;
@@ -404,16 +410,27 @@
         }
         
         function handleCaptchaClick(event, genId) {
+            event.preventDefault();
+            event.stopPropagation();
+            
             var img = event.target;
             var rect = img.getBoundingClientRect();
             var x = Math.round((event.clientX - rect.left) * (img.naturalWidth / rect.width));
             var y = Math.round((event.clientY - rect.top) * (img.naturalHeight / rect.height));
             
+            // Save scroll position
+            var scrollY = window.scrollY;
+            
             fetch('/api/multi/click/' + genId, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({x: x, y: y})
+            }).then(function() {
+                // Restore scroll position after a small delay
+                setTimeout(function() { window.scrollTo(0, scrollY); }, 50);
             });
+            
+            return false;
         }
         
         // Init
