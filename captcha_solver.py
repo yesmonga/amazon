@@ -53,6 +53,9 @@ def start_captcha_solver(arkose_iframe_url):
                 )
                 page = context.new_page()
                 
+                # Variable pour stocker le dernier token vu
+                last_token = {'value': None}
+                
                 # Intercepter les réponses pour capturer le token
                 def handle_response(response):
                     try:
@@ -63,6 +66,10 @@ def start_captcha_solver(arkose_iframe_url):
                                 if body and '"solved"' in body and 'true' in body.lower():
                                     with solver_lock:
                                         captcha_solver_state['solved'] = True
+                                        # Valider le token SEULEMENT quand solved=true
+                                        if last_token['value']:
+                                            captcha_solver_state['token'] = last_token['value']
+                                            print(f"[CAPTCHA] TOKEN validated after SOLVED!", flush=True)
                                     print(f"[CAPTCHA] SOLVED detected!", flush=True)
                             except:
                                 pass
@@ -72,9 +79,14 @@ def start_captcha_solver(arkose_iframe_url):
                                 if body and '|r=' in body:
                                     token_match = re.search(r'"token"\s*:\s*"([^"]+\|r=[^"]+)"', body)
                                     if token_match:
+                                        # Stocker le token mais NE PAS le valider encore
+                                        last_token['value'] = token_match.group(1)
+                                        print(f"[CAPTCHA] Token seen (waiting for solved)...", flush=True)
+                                        # Si déjà solved, valider immédiatement
                                         with solver_lock:
-                                            captcha_solver_state['token'] = token_match.group(1)
-                                        print(f"[CAPTCHA] TOKEN captured!", flush=True)
+                                            if captcha_solver_state['solved']:
+                                                captcha_solver_state['token'] = last_token['value']
+                                                print(f"[CAPTCHA] TOKEN validated!", flush=True)
                             except:
                                 pass
                     except:
