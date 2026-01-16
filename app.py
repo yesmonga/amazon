@@ -644,7 +644,7 @@ def run_generation():
                                     add_log(f'{email_addr}', 'success')
                                     set_step('success')
                                     sms_ok = True
-                                    time.sleep(2); continue  # Essayer autre numéro
+                                    break  # Succès
                                 else:
                                     add_log('SMS not received', 'warning')
                             elif 'cvf-number-blocked' in rph.text or 'activité inhabituelle' in rph.text:
