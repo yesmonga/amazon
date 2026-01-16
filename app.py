@@ -1412,6 +1412,7 @@ def run_giveaway(product_id):
 def participate_giveaway_account(email, cookies, product_id):
     """Participate in giveaway for a single account"""
     from curl_cffi import requests as curl_requests
+    import re
     
     session = curl_requests.Session(impersonate="chrome110")
     session.cookies.clear()
@@ -1440,40 +1441,6 @@ def participate_giveaway_account(email, cookies, product_id):
     html = resp.text
     soup = BeautifulSoup(html, 'html.parser')
     
-    # Check if invite button exists and is active
-    invite_btn = soup.find('input', attrs={'name': 'submit.inviteButton'})
-    if invite_btn and not invite_btn.get('disabled'):
-        # Can participate - extract data and submit
-        csrf_input = soup.find('input', attrs={'id': 'hdp-ib-csrf-token'})
-        ajax_input = soup.find('input', attrs={'id': 'hdp-ib-ajax-endpoint'})
-        
-        if not csrf_input or not ajax_input:
-            return {'status': 'error', 'error': 'Missing tokens'}
-        
-        csrf_token = csrf_input.get('value', '')
-        ajax_endpoint = ajax_input.get('value', '')
-        
-        # Submit invitation request
-        if ajax_endpoint:
-            ajax_url = f'https://{ajax_endpoint}'
-            post_headers = headers.copy()
-            post_headers['content-type'] = 'application/x-www-form-urlencoded'
-            post_headers['referer'] = url
-            post_headers['x-csrf-token'] = csrf_token
-            
-            post_data = {'anti-csrftoken-a2z': csrf_token}
-            
-            try:
-                resp2 = session.post(ajax_url, headers=post_headers, data=post_data, timeout=30)
-                if resp2.status_code == 200:
-                    return {'status': 'success', 'log': 'Invitation demandée!'}
-                else:
-                    return {'status': 'error', 'error': f'POST status {resp2.status_code}'}
-            except Exception as e:
-                return {'status': 'error', 'error': str(e)[:50]}
-        
-        return {'status': 'error', 'error': 'No ajax endpoint'}
-    
     # Check if already requested
     requested_div = soup.find('div', attrs={'id': 'hdp-detail-requested-id'})
     if requested_div:
@@ -1481,8 +1448,60 @@ def participate_giveaway_account(email, cookies, product_id):
         if 'aok-hidden' not in classes:
             return {'status': 'already', 'log': 'Déjà inscrit'}
     
-    # Check if unavailable
-    return {'status': 'unavailable', 'error': 'Tirage fermé ou indisponible'}
+    # Check if invite button exists and is active
+    invite_btn = soup.find('input', attrs={'name': 'submit.inviteButton'})
+    if not invite_btn or invite_btn.get('disabled'):
+        return {'status': 'unavailable', 'error': 'Tirage fermé'}
+    
+    # Extract UUID from ajax endpoint
+    ajax_input = soup.find('input', attrs={'id': 'hdp-ib-ajax-endpoint'})
+    if not ajax_input:
+        return {'status': 'error', 'error': 'No endpoint'}
+    
+    ajax_endpoint = ajax_input.get('value', '')
+    uuid_match = re.search(r'request-invite/([a-f0-9-]+)', ajax_endpoint)
+    if not uuid_match:
+        return {'status': 'error', 'error': 'No UUID'}
+    uuid = uuid_match.group(1)
+    
+    # Extract CSRF token
+    csrf_input = soup.find('input', attrs={'id': 'hdp-ib-csrf-token'})
+    csrf_token = csrf_input.get('value', '') if csrf_input else ''
+    
+    # Extract slate token
+    slate_meta = soup.find('meta', attrs={'name': 'encrypted-slate-token'})
+    slate_token = slate_meta.get('content', '') if slate_meta else ''
+    if not slate_token:
+        slate_match = re.search(r'"encryptedSlateToken"\s*:\s*"([^"]+)"', html)
+        slate_token = slate_match.group(1) if slate_match else ''
+    
+    if not csrf_token or not slate_token:
+        return {'status': 'error', 'error': 'Missing tokens'}
+    
+    # Build cookie header
+    cookie_header = '; '.join([f'{k}={v}' for k, v in cookies.items()])
+    
+    # Submit POST request
+    post_url = f'https://data.amazon.fr/custom/highdemandproductcontracts/request-invite/{uuid}'
+    post_headers = {
+        'accept': 'application/vnd.com.amazon.api+json; type="aapi.highdemandproductcontracts.request-invite/v1"',
+        'accept-language': 'fr-FR,fr;q=0.9',
+        'content-type': 'application/vnd.com.amazon.api+json; type="aapi.highdemandproductcontracts.request-invite.request/v1"',
+        'origin': 'https://www.amazon.fr',
+        'referer': 'https://www.amazon.fr/',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'x-amzn-encrypted-slate-token': slate_token,
+        'x-api-csrf-token': csrf_token
+    }
+    
+    try:
+        resp2 = session.post(post_url, headers=post_headers, data='{}', timeout=30)
+        if resp2.status_code == 200:
+            return {'status': 'success', 'log': 'Invitation demandée!'}
+        else:
+            return {'status': 'error', 'error': f'POST {resp2.status_code}'}
+    except Exception as e:
+        return {'status': 'error', 'error': str(e)[:50]}
 
 # Initialize giveaway table
 try:
