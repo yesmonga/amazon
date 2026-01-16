@@ -1289,8 +1289,14 @@ def run_gen_multi(gen_id):
                 otp_hf = {inp.get('name'): inp.get('value', '') for inp in otp_form.find_all('input', type='hidden') if inp.get('name')} if otp_form else {}
                 otp_hf.update({'cvfOtp': otp, 'otp': otp, 'code': otp})
                 otp_action = otp_form.get('action', '/ap/cvf/verify') if otp_form else '/ap/cvf/verify'
-                if not otp_action.startswith('http'): otp_action = f'https://www.amazon.fr{otp_action}'
+                add_gen_log(gen_id, f'Raw action: {otp_action[:30]}', 'info')
+                if not otp_action.startswith('http'):
+                    if not otp_action.startswith('/'):
+                        otp_action = '/' + otp_action
+                    otp_action = f'https://www.amazon.fr{otp_action}'
+                add_gen_log(gen_id, f'OTP URL: {otp_action[:50]}', 'info')
                 ro = session.post(otp_action, data=otp_hf, headers=get_headers_post(rev.url), allow_redirects=True, timeout=30)
+                add_gen_log(gen_id, f'OTP result: {ro.status_code}', 'info')
                 if 'phone' in ro.text.lower() or 'mobile' in ro.text.lower():
                     set_gen_step(gen_id, 'sms_otp')
                     add_gen_log(gen_id, 'SMS needed', 'info')
