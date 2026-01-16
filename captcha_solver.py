@@ -179,7 +179,11 @@ def get_captcha_state():
         }
 
 def stop_captcha_solver():
-    """Arrête le solver"""
+    """Arrête le solver et reset complet"""
     global captcha_solver_state
     with solver_lock:
         captcha_solver_state['active'] = False
+        captcha_solver_state['token'] = None
+        captcha_solver_state['solved'] = False
+        captcha_solver_state['screenshot'] = None
+        captcha_solver_state['error'] = None
