@@ -656,6 +656,65 @@
             });
         }
         
+        // Override XMLHttpRequest pour capturer les tokens Arkose
+        (function() {
+            var originalXHROpen = XMLHttpRequest.prototype.open;
+            var originalXHRSend = XMLHttpRequest.prototype.send;
+            
+            XMLHttpRequest.prototype.open = function(method, url) {
+                this._url = url;
+                return originalXHROpen.apply(this, arguments);
+            };
+            
+            XMLHttpRequest.prototype.send = function() {
+                var xhr = this;
+                var oldOnReadyStateChange = xhr.onreadystatechange;
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === 4 && xhr.responseText) {
+                        // Chercher token Arkose dans les réponses
+                        if (xhr.responseText.includes('|r=')) {
+                            var match = xhr.responseText.match(/"token"\s*:\s*"([^"]+\|r=[^"]+)"/);
+                            if (match) {
+                                addCaptchaLog('XHR Token found!');
+                                sendCaptchaToken(match[1]);
+                            }
+                        }
+                        // Chercher solved:true
+                        if (xhr.responseText.includes('"solved"') && xhr.responseText.includes('true')) {
+                            addCaptchaLog('XHR: solved=true detected!');
+                            challengeComplete = true;
+                        }
+                    }
+                    if (oldOnReadyStateChange) oldOnReadyStateChange.apply(this, arguments);
+                };
+                return originalXHRSend.apply(this, arguments);
+            };
+        })();
+        
+        // Override fetch pour capturer les tokens Arkose
+        (function() {
+            var originalFetch = window.fetch;
+            window.fetch = function() {
+                return originalFetch.apply(this, arguments).then(function(response) {
+                    var clonedResponse = response.clone();
+                    clonedResponse.text().then(function(text) {
+                        if (text && text.includes('|r=')) {
+                            var match = text.match(/"token"\s*:\s*"([^"]+\|r=[^"]+)"/);
+                            if (match) {
+                                addCaptchaLog('Fetch Token found!');
+                                sendCaptchaToken(match[1]);
+                            }
+                        }
+                        if (text && text.includes('"solved"') && text.includes('true')) {
+                            addCaptchaLog('Fetch: solved=true detected!');
+                            challengeComplete = true;
+                        }
+                    }).catch(function(){});
+                    return response;
+                });
+            };
+        })();
+        
         window.addEventListener('message', function(event) {
             var data = event.data;
             var dataStr = data ? (typeof data === 'string' ? data.substring(0, 80) : JSON.stringify(data).substring(0, 80)) : 'null';
