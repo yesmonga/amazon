@@ -32,6 +32,38 @@ HEROSMS_BASE_URL = 'https://hero-sms.com/stubs/handler_api.php'
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
 FIRST_NAMES = ['Marie', 'Jean', 'Sophie', 'Pierre', 'Claire', 'Thomas', 'Julie', 'Lucas', 'Emma', 'Hugo']
 LAST_NAMES = ['Dupont', 'Martin', 'Durand', 'Bernard', 'Lefevre', 'Moreau', 'Simon', 'Laurent', 'Michel', 'Garcia']
+# Proxies rotation
+PROXIES = [
+    'resi.thexyzstore.com:8000:aigrinchxyz:8jqb7dml-country-FR-hardsession-av0c62v3-duration-60',
+    'isp.oxylabs.io:8001:aigrinch_NvNti:Faure02112002=',
+    'isp.oxylabs.io:8002:aigrinch_NvNti:Faure02112002=',
+    'isp.oxylabs.io:8003:aigrinch_NvNti:Faure02112002=',
+    'isp.oxylabs.io:8004:aigrinch_NvNti:Faure02112002=',
+    'isp.oxylabs.io:8005:aigrinch_NvNti:Faure02112002=',
+    'isp.oxylabs.io:8006:aigrinch_NvNti:Faure02112002=',
+    'isp.oxylabs.io:8007:aigrinch_NvNti:Faure02112002=',
+    'isp.oxylabs.io:8008:aigrinch_NvNti:Faure02112002=',
+    'isp.oxylabs.io:8009:aigrinch_NvNti:Faure02112002=',
+    'isp.oxylabs.io:8010:aigrinch_NvNti:Faure02112002=',
+    'resi.thexyzstore.com:8000:aigrinchxyz:8jqb7dml-country-FR-hardsession-j4k6b5tp-duration-60',
+    'resi.thexyzstore.com:8000:aigrinchxyz:8jqb7dml-country-FR-hardsession-o0lai4ly-duration-60',
+    'resi.thexyzstore.com:8000:aigrinchxyz:8jqb7dml-country-FR-hardsession-kkwg8a1c-duration-60',
+    'resi.thexyzstore.com:8000:aigrinchxyz:8jqb7dml-country-FR-hardsession-jdw8z84m-duration-60',
+    'resi.thexyzstore.com:8000:aigrinchxyz:8jqb7dml-country-FR-hardsession-eml3gzyb-duration-60',
+    'resi.thexyzstore.com:8000:aigrinchxyz:8jqb7dml-country-FR-hardsession-7lnzawnd-duration-60',
+    'resi.thexyzstore.com:8000:aigrinchxyz:8jqb7dml-country-FR-hardsession-ytfm96h4-duration-60',
+    'resi.thexyzstore.com:8000:aigrinchxyz:8jqb7dml-country-FR-hardsession-jyjvlxbe-duration-60',
+]
+
+def get_random_proxy():
+    proxy_line = random.choice(PROXIES)
+    parts = proxy_line.split(':')
+    if len(parts) >= 4:
+        host, port, user, pwd = parts[0], parts[1], parts[2], ':'.join(parts[3:])
+        proxy_url = f'http://{user}:{pwd}@{host}:{port}'
+        return {'http': proxy_url, 'https': proxy_url}
+    return None
+
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'amazon-secret')
@@ -348,6 +380,12 @@ def run_generation():
         add_log(f'Email: {email_addr}', 'info')
         add_log(f'Name: {customer_name}', 'info')
         session = requests.Session()
+        
+        # Apply random proxy
+        proxy = get_random_proxy()
+        if proxy:
+            session.proxies = proxy
+            add_log(f'Proxy: {proxy["http"].split("@")[1]}', 'info')
         
         # STEP 1: GET registration form
         set_step('get_form')
