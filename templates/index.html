@@ -217,6 +217,23 @@
             border: none;
         }
         
+        .btn-captcha-done {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 0 0 16px 16px;
+            background: linear-gradient(135deg, #00d26a, #00b359);
+            color: white;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            display: none;
+        }
+        
+        .btn-captcha-done.active {
+            display: block;
+        }
+        
         /* Logs */
         .logs {
             margin-top: 20px;
@@ -380,6 +397,7 @@
                         <span class="captcha-header-text">Résous le captcha</span>
                     </div>
                     <iframe id="captcha-frame" class="captcha-frame"></iframe>
+                    <button class="btn-captcha-done" id="btn-captcha-done" onclick="manualCaptchaDone()">✅ J'ai résolu le captcha</button>
                 </div>
                 
                 <div class="logs" id="logs" style="display:none;"></div>
@@ -594,24 +612,119 @@
             });
         }
         
-        // Captcha token listener
+        // Captcha token listener - improved detection
+        var captchaSent = false;
+        
+        function sendCaptchaToken(token) {
+            if (captchaSent) return;
+            captchaSent = true;
+            console.log('Sending captcha token:', token.substring(0, 50) + '...');
+            fetch('/api/captcha', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({token: token})
+            }).then(function() {
+                console.log('Token sent successfully');
+            });
+        }
+        
         window.addEventListener('message', function(event) {
             var data = event.data;
+            console.log('postMessage received:', typeof data, data ? JSON.stringify(data).substring(0, 100) : 'null');
+            
+            // Type 1: Direct token string with |r=
             if (data && typeof data === 'string' && data.includes('|r=') && !data.startsWith('{')) {
-                fetch('/api/captcha', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({token: data})
-                });
+                sendCaptchaToken(data);
+                return;
             }
-            if (data && data.token && typeof data.token === 'string' && data.token.includes('|r=')) {
-                fetch('/api/captcha', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({token: data.token})
-                });
+            
+            // Type 2: Object with token property
+            if (data && typeof data === 'object') {
+                if (data.token && typeof data.token === 'string' && data.token.includes('|r=')) {
+                    sendCaptchaToken(data.token);
+                    return;
+                }
+                // Type 3: Nested data.data.token
+                if (data.data && data.data.token && typeof data.data.token === 'string') {
+                    sendCaptchaToken(data.data.token);
+                    return;
+                }
+                // Type 4: solved event
+                if (data.solved === true || data.event === 'solved' || data.eventId === 'challenge-complete') {
+                    // Try to extract token from various locations
+                    var token = data.token || data.response || data.sessionToken || (data.data && data.data.token);
+                    if (token) {
+                        sendCaptchaToken(token);
+                        return;
+                    }
+                }
+            }
+            
+            // Type 5: JSON string that needs parsing
+            if (data && typeof data === 'string' && data.startsWith('{')) {
+                try {
+                    var parsed = JSON.parse(data);
+                    if (parsed.token && parsed.token.includes('|r=')) {
+                        sendCaptchaToken(parsed.token);
+                        return;
+                    }
+                } catch(e) {}
             }
         });
+        
+        // Show manual button after 3 seconds of captcha display
+        var captchaShownTime = null;
+        
+        setInterval(function() {
+            if (captchaSent) return;
+            
+            var captchaZone = document.getElementById('captcha-zone');
+            var btnDone = document.getElementById('btn-captcha-done');
+            
+            if (captchaZone.classList.contains('active')) {
+                if (!captchaShownTime) captchaShownTime = Date.now();
+                // Show manual button after 5 seconds
+                if (Date.now() - captchaShownTime > 5000) {
+                    btnDone.classList.add('active');
+                }
+            } else {
+                captchaShownTime = null;
+                btnDone.classList.remove('active');
+            }
+            
+            // Also try to request token from iframe
+            var frame = document.getElementById('captcha-frame');
+            if (frame && frame.contentWindow) {
+                try {
+                    frame.contentWindow.postMessage({action: 'getToken'}, '*');
+                } catch(e) {}
+            }
+        }, 1000);
+        
+        function manualCaptchaDone() {
+            // User confirms captcha is solved - send a placeholder token
+            // The backend will detect this and try to proceed
+            if (captchaSent) return;
+            
+            // Try to get token from iframe URL or localStorage
+            var frame = document.getElementById('captcha-frame');
+            var token = 'MANUAL_CONFIRM_' + Date.now();
+            
+            // Check if we have a token stored
+            try {
+                var storedToken = localStorage.getItem('arkose_token');
+                if (storedToken && storedToken.includes('|r=')) {
+                    token = storedToken;
+                }
+            } catch(e) {}
+            
+            console.log('Manual captcha confirmation, token:', token.substring(0, 50));
+            sendCaptchaToken(token);
+            
+            // Hide button and show confirmation
+            document.getElementById('btn-captcha-done').textContent = '✓ Envoyé!';
+            document.getElementById('btn-captcha-done').style.background = '#666';
+        }
         
         // Init
         loadStats();
