@@ -1313,6 +1313,34 @@ def giveaway_accounts():
         })
     return jsonify({'accounts': result})
 
+@app.route('/api/giveaway/preview', methods=['POST'])
+def giveaway_preview():
+    """Preview stats for a product before launching"""
+    data = request.get_json() or {}
+    product_id = data.get('product_id', '').strip()
+    
+    if not product_id:
+        return jsonify({'error': 'Product ID required'}), 400
+    
+    accounts = get_all_accounts()
+    total = len(accounts)
+    already_done = 0
+    to_process = 0
+    
+    for acc in accounts:
+        status = get_giveaway_status(acc['email'], product_id)
+        if status in ['success', 'already']:
+            already_done += 1
+        else:
+            to_process += 1
+    
+    return jsonify({
+        'product_id': product_id,
+        'total_accounts': total,
+        'already_done': already_done,
+        'to_process': to_process
+    })
+
 @app.route('/api/giveaway/start', methods=['POST'])
 def giveaway_start():
     global giveaway_state

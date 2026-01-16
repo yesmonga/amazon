@@ -171,9 +171,15 @@
         
         <div class="input-section">
             <div class="input-group">
-                <input type="text" id="productId" placeholder="Code produit (ex: B0DSQ9W4J4)">
+                <input type="text" id="productId" placeholder="Code produit (ex: B0DSQ9W4J4)" oninput="previewProduct()">
+                <button class="btn" style="background:#252542;color:#fff;" onclick="previewProduct()">🔍 Check</button>
                 <button class="btn btn-primary" onclick="startGiveaway()">🚀 Lancer</button>
                 <button class="btn btn-danger" onclick="stopGiveaway()">⏹ Stop</button>
+            </div>
+            <div id="previewStats" style="display:none;background:var(--bg-light);padding:15px;border-radius:10px;margin:15px 0;text-align:center;">
+                <span style="color:var(--success);font-weight:bold;" id="previewDone">0</span> déjà inscrits · 
+                <span style="color:var(--primary);font-weight:bold;" id="previewTodo">0</span> à inscrire · 
+                <span style="color:var(--text-muted);" id="previewTotal">0</span> total
             </div>
             <div class="progress-bar">
                 <div class="progress-fill" id="progressBar" style="width: 0%"></div>
@@ -207,6 +213,37 @@
     <script>
         let pollInterval = null;
         let isRunning = false;
+        let previewTimeout = null;
+        
+        async function previewProduct() {
+            const productId = document.getElementById('productId').value.trim();
+            const previewDiv = document.getElementById('previewStats');
+            
+            if (!productId) {
+                previewDiv.style.display = 'none';
+                return;
+            }
+            
+            // Debounce
+            if (previewTimeout) clearTimeout(previewTimeout);
+            previewTimeout = setTimeout(async () => {
+                try {
+                    const res = await fetch('/api/giveaway/preview', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({product_id: productId})
+                    });
+                    const data = await res.json();
+                    
+                    document.getElementById('previewDone').textContent = data.already_done || 0;
+                    document.getElementById('previewTodo').textContent = data.to_process || 0;
+                    document.getElementById('previewTotal').textContent = data.total_accounts || 0;
+                    previewDiv.style.display = 'block';
+                } catch (e) {
+                    console.error('Preview error:', e);
+                }
+            }, 300);
+        }
         
         async function loadAccounts() {
             try {
