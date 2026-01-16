@@ -3,6 +3,7 @@ import re
 import time
 import base64
 import threading
+import queue
 from playwright.sync_api import sync_playwright
 
 # State global pour le captcha solver
@@ -11,16 +12,26 @@ captcha_solver_state = {
     'screenshot': None,
     'token': None,
     'solved': False,
-    'error': None,
-    'page': None,
-    'browser': None,
-    'context': None
+    'error': None
 }
 solver_lock = threading.Lock()
+click_queue = queue.Queue()
 
 def start_captcha_solver(arkose_iframe_url):
     """Démarre le navigateur Playwright et ouvre l'iframe Arkose"""
     global captcha_solver_state
+    
+    # Si déjà actif, ne pas relancer
+    with solver_lock:
+        if captcha_solver_state['active']:
+            return True
+    
+    # Vider la queue de clics
+    while not click_queue.empty():
+        try:
+            click_queue.get_nowait()
+        except:
+            break
     
     def run_solver():
         global captcha_solver_state
@@ -30,19 +41,17 @@ def start_captcha_solver(arkose_iframe_url):
                 captcha_solver_state['token'] = None
                 captcha_solver_state['solved'] = False
                 captcha_solver_state['error'] = None
+                captcha_solver_state['screenshot'] = None
+            
+            print(f"[CAPTCHA] Starting Playwright...", flush=True)
             
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context(
                     viewport={'width': 400, 'height': 500},
-                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                 )
                 page = context.new_page()
-                
-                with solver_lock:
-                    captcha_solver_state['browser'] = browser
-                    captcha_solver_state['context'] = context
-                    captcha_solver_state['page'] = page
                 
                 # Intercepter les réponses pour capturer le token
                 def handle_response(response):
@@ -54,6 +63,7 @@ def start_captcha_solver(arkose_iframe_url):
                                 if body and '"solved"' in body and 'true' in body.lower():
                                     with solver_lock:
                                         captcha_solver_state['solved'] = True
+                                    print(f"[CAPTCHA] SOLVED detected!", flush=True)
                             except:
                                 pass
                         if 'arkoselabs' in url or 'funcaptcha' in url:
@@ -64,6 +74,7 @@ def start_captcha_solver(arkose_iframe_url):
                                     if token_match:
                                         with solver_lock:
                                             captcha_solver_state['token'] = token_match.group(1)
+                                        print(f"[CAPTCHA] TOKEN captured!", flush=True)
                             except:
                                 pass
                     except:
@@ -72,14 +83,16 @@ def start_captcha_solver(arkose_iframe_url):
                 page.on('response', handle_response)
                 
                 # Charger l'iframe
+                print(f"[CAPTCHA] Loading URL...", flush=True)
                 page.goto(arkose_iframe_url, wait_until='networkidle', timeout=30000)
                 
                 # Prendre un screenshot initial
                 screenshot = page.screenshot()
                 with solver_lock:
                     captcha_solver_state['screenshot'] = base64.b64encode(screenshot).decode('utf-8')
+                print(f"[CAPTCHA] Initial screenshot taken", flush=True)
                 
-                # Attendre jusqu'à résolution ou timeout (5 min)
+                # Boucle principale - traiter les clics et prendre des screenshots
                 start_time = time.time()
                 while time.time() - start_time < 300:
                     with solver_lock:
@@ -87,6 +100,16 @@ def start_captcha_solver(arkose_iframe_url):
                             break
                         if captcha_solver_state['token']:
                             break
+                    
+                    # Traiter les clics en attente
+                    try:
+                        while True:
+                            x, y = click_queue.get_nowait()
+                            print(f"[CAPTCHA] Clicking at {x}, {y}", flush=True)
+                            page.mouse.click(x, y)
+                            time.sleep(0.3)
+                    except queue.Empty:
+                        pass
                     
                     # Prendre un nouveau screenshot
                     try:
@@ -99,24 +122,25 @@ def start_captcha_solver(arkose_iframe_url):
                         if 'Vérification terminée' in content or 'prouvé que vous êtes un être humain' in content:
                             with solver_lock:
                                 captcha_solver_state['solved'] = True
-                    except:
-                        pass
+                            print(f"[CAPTCHA] Success text detected!", flush=True)
+                    except Exception as e:
+                        print(f"[CAPTCHA] Screenshot error: {e}", flush=True)
                     
-                    time.sleep(0.5)
+                    time.sleep(0.4)
                 
                 # Fermer
+                print(f"[CAPTCHA] Closing browser...", flush=True)
                 context.close()
                 browser.close()
                 
         except Exception as e:
+            print(f"[CAPTCHA] Error: {e}", flush=True)
             with solver_lock:
                 captcha_solver_state['error'] = str(e)
         finally:
             with solver_lock:
                 captcha_solver_state['active'] = False
-                captcha_solver_state['page'] = None
-                captcha_solver_state['browser'] = None
-                captcha_solver_state['context'] = None
+            print(f"[CAPTCHA] Solver stopped", flush=True)
     
     thread = threading.Thread(target=run_solver)
     thread.daemon = True
@@ -124,20 +148,9 @@ def start_captcha_solver(arkose_iframe_url):
     return True
 
 def click_captcha(x, y):
-    """Envoie un clic aux coordonnées spécifiées"""
-    global captcha_solver_state
-    with solver_lock:
-        page = captcha_solver_state.get('page')
-        if page:
-            try:
-                page.mouse.click(x, y)
-                time.sleep(0.3)
-                screenshot = page.screenshot()
-                captcha_solver_state['screenshot'] = base64.b64encode(screenshot).decode('utf-8')
-                return True
-            except:
-                pass
-    return False
+    """Ajoute un clic à la queue (sera traité par le thread Playwright)"""
+    click_queue.put((x, y))
+    return True
 
 def get_captcha_state():
     """Retourne l'état actuel du solver"""

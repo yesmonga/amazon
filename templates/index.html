@@ -622,6 +622,7 @@
         
         // Playwright Captcha Solver
         var captchaPollInterval = null;
+        var captchaSolverStarted = false;
         
         function handleCaptchaClick(event) {
             var img = document.getElementById('captcha-img');
@@ -649,6 +650,9 @@
         }
         
         function startCaptchaSolver(url) {
+            if (captchaSolverStarted) return;
+            captchaSolverStarted = true;
+            
             addCaptchaLog('Starting Playwright solver...');
             var loading = document.getElementById('captcha-loading');
             var img = document.getElementById('captcha-img');
@@ -689,6 +693,7 @@
                         sendCaptchaToken(data.token);
                         clearInterval(captchaPollInterval);
                         captchaPollInterval = null;
+                        captchaSolverStarted = false;
                     }
                     if (data.error) {
                         addCaptchaLog('Error: ' + data.error);
@@ -697,6 +702,7 @@
                         addCaptchaLog('Solver stopped');
                         clearInterval(captchaPollInterval);
                         captchaPollInterval = null;
+                        captchaSolverStarted = false;
                     }
                 });
             }, 500);
