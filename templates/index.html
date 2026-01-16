@@ -549,12 +549,20 @@
             const captchaZone = document.getElementById('captcha-zone');
             if (state.step === 'waiting_captcha' && state.captcha_url) {
                 captchaZone.classList.add('active');
-                // Start Playwright solver instead of showing iframe
-                if (!captchaPollInterval) {
+                // Start Playwright solver ONLY ONCE
+                if (!captchaSolverStarted) {
                     startCaptchaSolver(state.captcha_url);
                 }
             } else {
                 captchaZone.classList.remove('active');
+                // Reset only when step changes away from captcha
+                if (state.step !== 'waiting_captcha') {
+                    captchaSolverStarted = false;
+                    if (captchaPollInterval) {
+                        clearInterval(captchaPollInterval);
+                        captchaPollInterval = null;
+                    }
+                }
             }
             
             // Logs
@@ -688,21 +696,14 @@
                             img.src = 'data:image/png;base64,' + data.screenshot;
                         }
                     }
-                    if (data.token) {
-                        addCaptchaLog('TOKEN CAPTURED!');
+                    if (data.token && data.solved) {
+                        addCaptchaLog('TOKEN CAPTURED! Sending...');
                         sendCaptchaToken(data.token);
                         clearInterval(captchaPollInterval);
                         captchaPollInterval = null;
-                        captchaSolverStarted = false;
                     }
                     if (data.error) {
                         addCaptchaLog('Error: ' + data.error);
-                    }
-                    if (!data.active && !data.token) {
-                        addCaptchaLog('Solver stopped');
-                        clearInterval(captchaPollInterval);
-                        captchaPollInterval = null;
-                        captchaSolverStarted = false;
                     }
                 });
             }, 500);
