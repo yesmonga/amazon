@@ -153,10 +153,28 @@ def get_all_accounts():
     conn = get_db()
     if conn:
         try:
-            cur = conn.cursor(); cur.execute("SELECT email, password, cookies, created_at FROM accounts ORDER BY created_at DESC"); results = cur.fetchall(); cur.close(); conn.close()
+            cur = conn.cursor(); cur.execute("SELECT id, email, password, cookies, created_at FROM accounts ORDER BY created_at DESC"); results = cur.fetchall(); cur.close(); conn.close()
             return results
         except: pass
     return []
+
+def get_account_by_id(account_id):
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor(); cur.execute("SELECT id, email, password, cookies FROM accounts WHERE id = %s", (account_id,)); result = cur.fetchone(); cur.close(); conn.close()
+            return result
+        except: pass
+    return None
+
+def delete_account_by_id(account_id):
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor(); cur.execute("DELETE FROM accounts WHERE id = %s", (account_id,)); conn.commit(); cur.close(); conn.close()
+            return True
+        except: pass
+    return False
 
 def add_log(message, log_type='info'):
     with state_lock:
@@ -837,8 +855,22 @@ def handle_emails():
 @app.route('/api/accounts')
 def get_accounts():
     accounts = get_all_accounts()
-    formatted = [{'email': a['email'], 'password': a['password'], 'cookies': a['cookies'], 'created_at': str(a['created_at']) if a['created_at'] else None} for a in accounts]
+    formatted = [{'id': a['id'], 'email': a['email'], 'password': a['password'], 'cookies': a['cookies'], 'created_at': str(a['created_at']) if a['created_at'] else None} for a in accounts]
     return jsonify({'accounts': formatted, 'count': len(formatted)})
+
+@app.route('/api/account/<int:account_id>', methods=['DELETE'])
+def delete_account(account_id):
+    if delete_account_by_id(account_id):
+        return jsonify({'success': True})
+    return jsonify({'error': 'Failed to delete'}), 500
+
+@app.route('/session/<int:account_id>')
+def open_session(account_id):
+    account = get_account_by_id(account_id)
+    if not account:
+        return "Compte non trouvé", 404
+    cookies = account['cookies']
+    return render_template('session.html', account_id=account_id, email=account['email'], cookies=cookies)
 
 @app.route('/api/captcha/start', methods=['POST'])
 def start_captcha():
