@@ -620,6 +620,88 @@
             });
         }
         
+        // Playwright Captcha Solver
+        var captchaPollInterval = null;
+        
+        function handleCaptchaClick(event) {
+            var img = document.getElementById('captcha-img');
+            if (!img) return;
+            var rect = img.getBoundingClientRect();
+            var x = Math.round((event.clientX - rect.left) * (img.naturalWidth / rect.width));
+            var y = Math.round((event.clientY - rect.top) * (img.naturalHeight / rect.height));
+            
+            console.log('Click at', x, y);
+            addCaptchaLog('Click: ' + x + ', ' + y);
+            
+            fetch('/api/captcha/click', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({x: x, y: y})
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.state && data.state.screenshot) {
+                    document.getElementById('captcha-img').src = 'data:image/png;base64,' + data.state.screenshot;
+                }
+                if (data.state && data.state.token) {
+                    addCaptchaLog('TOKEN: ' + data.state.token.substring(0, 50));
+                    sendCaptchaToken(data.state.token);
+                }
+            });
+        }
+        
+        function startCaptchaSolver(url) {
+            addCaptchaLog('Starting Playwright solver...');
+            var loading = document.getElementById('captcha-loading');
+            var img = document.getElementById('captcha-img');
+            if (loading) loading.style.display = 'block';
+            if (img) img.style.display = 'none';
+            
+            fetch('/api/captcha/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({url: url})
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.success) {
+                    addCaptchaLog('Solver started!');
+                    startCaptchaPolling();
+                } else {
+                    addCaptchaLog('Error: ' + (data.error || 'unknown'));
+                }
+            }).catch(function(e) {
+                addCaptchaLog('Error starting: ' + e);
+            });
+        }
+        
+        function startCaptchaPolling() {
+            if (captchaPollInterval) return;
+            captchaPollInterval = setInterval(function() {
+                fetch('/api/captcha/state').then(function(r) { return r.json(); }).then(function(data) {
+                    if (data.screenshot) {
+                        var loading = document.getElementById('captcha-loading');
+                        var img = document.getElementById('captcha-img');
+                        if (loading) loading.style.display = 'none';
+                        if (img) {
+                            img.style.display = 'block';
+                            img.src = 'data:image/png;base64,' + data.screenshot;
+                        }
+                    }
+                    if (data.token) {
+                        addCaptchaLog('TOKEN CAPTURED!');
+                        sendCaptchaToken(data.token);
+                        clearInterval(captchaPollInterval);
+                        captchaPollInterval = null;
+                    }
+                    if (data.error) {
+                        addCaptchaLog('Error: ' + data.error);
+                    }
+                    if (!data.active && !data.token) {
+                        addCaptchaLog('Solver stopped');
+                        clearInterval(captchaPollInterval);
+                        captchaPollInterval = null;
+                    }
+                });
+            }, 500);
+        }
+        
         // Captcha token listener - improved detection
         var captchaSent = false;
         var detectedToken = null;
