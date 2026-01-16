@@ -735,17 +735,11 @@ def run_generation():
                                 add_log('Phone rejected', 'warning')
                         
                         if not sms_ok:
-                            add_log('SMS failed, saving partial account', 'warning')
-                            cd = dict(session.cookies)
-                            save_account_db(email_addr, PASSWORD, cd)
-                            mark_email_used(email_addr)
-                            set_step('success_partial')
+                            add_log('SMS failed - compte NON sauvegardé', 'error')
+                            set_step('error')
                     else:
-                        add_log('verifyToken missing for SMS', 'warning')
-                        cd = dict(session.cookies)
-                        save_account_db(email_addr, PASSWORD, cd)
-                        mark_email_used(email_addr)
-                        set_step('success_partial')
+                        add_log('verifyToken missing - compte NON sauvegardé', 'error')
+                        set_step('error')
                 else:
                     add_log('Account created (no SMS needed)!', 'success')
                     cd = dict(session.cookies)
