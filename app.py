@@ -1413,7 +1413,7 @@ def participate_giveaway_account(email, cookies, product_id):
     """Participate in giveaway for a single account"""
     from curl_cffi import requests as curl_requests
     
-    session = curl_requests.Session(impersonate="chrome120")
+    session = curl_requests.Session(impersonate="chrome110")
     session.cookies.clear()
     
     # Load cookies
