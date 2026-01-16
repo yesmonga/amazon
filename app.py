@@ -1113,17 +1113,39 @@ def run_gen_multi(gen_id):
             return
         add_gen_log(gen_id, arkose.group(), 'info')
         
+        # Get CVF form data first
+        soup_cvf = BeautifulSoup(rcvf.text, "html.parser")
+        cvf_form = soup_cvf.find('form')
+        cvf_hf = {inp.get('name'): inp.get('value', '') for inp in cvf_form.find_all('input', type='hidden') if inp.get('name')} if cvf_form else {}
+        verify_token = cvf_hf.get('verifyToken', '')
+        
         # Get Arkose page with proper options
         session_id = session.cookies.get('session-id', '')
-        ao = {"clientData": json.dumps({"sessionId": session_id, "marketplaceId": "A13V1IB3VIYZZH", "clientUseCase": "/ap/register"}), "challengeType": arkose.group(), "locale": "fr-FR", "externalId": ''.join(random.choices(string.ascii_uppercase + string.digits, k=20)), "enableHeaderFooter": False, "enableBypassMechanism": False, "enableModalView": False}
+        arkose_level = arkose.group()
+        ao = {"clientData": json.dumps({"sessionId": session_id, "marketplaceId": "A13V1IB3VIYZZH", "clientUseCase": "/ap/register"}), "challengeType": arkose_level, "locale": "fr-FR", "externalId": ''.join(random.choices(string.ascii_uppercase + string.digits, k=20)), "enableHeaderFooter": False, "enableBypassMechanism": False, "enableModalView": False}
         ark_url = f'https://www.amazon.fr/aaut/verify/cvf?options={quote(json.dumps(ao))}'
         ha = get_headers_get()
         ha['Referer'] = loc
         ra = session.get(ark_url, headers=ha, timeout=30)
         add_gen_log(gen_id, f'Arkose page: {ra.status_code}', 'info')
         
-        # Try multiple ways to find iframe
+        # Extract arkose session token from response header
+        aar = ra.headers.get('amz-aamation-resp', '')
+        ast, csc = '', ''
+        if aar:
+            try:
+                ad = json.loads(aar)
+                ast = ad.get('sessionToken', '')
+                csc = ad.get('clientSideContext', '')
+                add_gen_log(gen_id, f'Arkose ST: {ast[:30]}...', 'info')
+            except: pass
+        
+        # Get CSRF token
         soup_a = BeautifulSoup(ra.text, 'html.parser')
+        cm = soup_a.find('meta', attrs={'name': 'csrf-token'})
+        csrf = cm.get('content', '') if cm else ''
+        
+        # Try multiple ways to find iframe
         iframe = soup_a.find('iframe', id='aacb-arkose-frame')
         iframe_url = None
         if iframe:
@@ -1133,12 +1155,12 @@ def run_gen_multi(gen_id):
             if m:
                 iframe_url = m.group(1)
         if not iframe_url:
-            add_gen_log(gen_id, f'No iframe found, page: {ra.text[:100]}', 'error')
+            add_gen_log(gen_id, f'No iframe', 'error')
             set_gen_step(gen_id, 'error')
             return
         
         iframe_url = iframe_url.replace('&amp;', '&')
-        add_gen_log(gen_id, 'Arkose iframe found', 'success')
+        add_gen_log(gen_id, 'Arkose iframe OK', 'success')
         
         if PLAYWRIGHT_AVAILABLE:
             add_gen_log(gen_id, '=== SOLVE CAPTCHA ===', 'warning')
@@ -1162,26 +1184,39 @@ def run_gen_multi(gen_id):
             set_gen_step(gen_id, 'error')
             return
         
+        # Submit captcha using GET with proper URL format (like single gen)
         set_gen_step(gen_id, 'verifying')
-        st_m = re.search(r'"sessionToken"\s*:\s*"([^"]+)"', rcvf.text)
-        st = st_m.group(1) if st_m else ''
-        hdrs = get_headers_post(loc)
-        hdrs['Content-Type'] = 'application/json'
-        rv = session.post(f'https://www.amazon.fr/aaut/verify/cvf/{st}', json={'aaCaptcha': token, 'verification': 'cvfInfo'}, headers=hdrs, timeout=30)
+        cr = json.dumps({"challengeType": arkose_level, "data": json.dumps({"sessionToken": token})})
+        vcu = f"https://www.amazon.fr/aaut/verify/cvf/{ast}?context={quote(csc, safe='')}&options={quote(json.dumps(ao))}&response={quote(cr)}"
+        
+        hv = get_headers_get()
+        hv['anti-csrftoken-a2z'] = csrf
+        hv['Referer'] = loc
+        hv['accept'] = '*/*'
+        
+        rv = session.get(vcu, headers=hv, timeout=30)
         add_gen_log(gen_id, f'Verify: {rv.status_code}', 'info')
         
-        soup_cvf = BeautifulSoup(rcvf.text, "html.parser")
-        cvf_form = soup_cvf.find('form')
-        cvf_hf = {inp.get('name'): inp.get('value', '') for inp in cvf_form.find_all('input', type='hidden') if inp.get('name')} if cvf_form else {}
-        vt_m = re.search(r'"verifyToken"\s*:\s*"([^"]+)"', rv.text)
-        vt = vt_m.group(1) if vt_m else cvf_hf.get('verifyToken', '')
+        # Finalize with POST
+        vt = verify_token
+        if not vt:
+            vt_m = re.search(r'"verifyToken"\s*:\s*"([^"]+)"', rv.text)
+            vt = vt_m.group(1) if vt_m else ''
         if not vt:
             add_gen_log(gen_id, 'No verifyToken', 'error')
             set_gen_step(gen_id, 'error')
             return
         
-        fd = cvf_hf.copy()
-        fd.update({'verifyToken': vt, 'cvfAction': 'verify'})
+        fd = {
+            'cvf_aamation_response_token': ast,
+            'cvf_captcha_captcha_action': 'verifyAamationChallenge',
+            'cvf_aamation_error_code': '',
+            'clientContext': session_id,
+            'openid.assoc_handle': 'frflex',
+            'openid.mode': 'checkid_setup',
+            'openid.ns': 'http://specs.openid.net/auth/2.0',
+            'verifyToken': vt
+        }
         rf = session.post('https://www.amazon.fr/ap/cvf/verify', data=fd, headers=get_headers_post(loc), allow_redirects=False, timeout=30)
         redir = rf.headers.get('Location', '')
         if redir and not redir.startswith('http'): redir = f'https://www.amazon.fr{redir}'
