@@ -397,6 +397,7 @@
                         <span class="captcha-header-text">Résous le captcha</span>
                     </div>
                     <iframe id="captcha-frame" class="captcha-frame"></iframe>
+                    <div id="captcha-debug" style="background:#1a1a2e;padding:8px;font-size:11px;max-height:100px;overflow-y:auto;color:#0f0;font-family:monospace;"></div>
                     <button class="btn-captcha-done" id="btn-captcha-done" onclick="manualCaptchaDone()">✅ J'ai résolu le captcha</button>
                 </div>
                 
@@ -614,26 +615,50 @@
         
         // Captcha token listener - improved detection
         var captchaSent = false;
+        var detectedToken = null;
+        
+        function addCaptchaLog(msg) {
+            console.log('[CAPTCHA] ' + msg);
+            var logDiv = document.getElementById('captcha-debug');
+            if (logDiv) {
+                logDiv.innerHTML += '<div>' + new Date().toLocaleTimeString() + ' - ' + msg + '</div>';
+                logDiv.scrollTop = logDiv.scrollHeight;
+            }
+        }
         
         function sendCaptchaToken(token) {
             if (captchaSent) return;
+            
+            // IMPORTANT: Only send real Arkose tokens, not manual confirms
+            if (!token || !token.includes('|r=')) {
+                addCaptchaLog('Invalid token (no |r=): ' + (token ? token.substring(0, 30) : 'null'));
+                return;
+            }
+            
             captchaSent = true;
-            console.log('Sending captcha token:', token.substring(0, 50) + '...');
+            detectedToken = token;
+            addCaptchaLog('VALID TOKEN DETECTED! Sending...');
+            addCaptchaLog('Token: ' + token.substring(0, 60) + '...');
+            
             fetch('/api/captcha', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({token: token})
-            }).then(function() {
-                console.log('Token sent successfully');
+            }).then(function(r) {
+                addCaptchaLog('Token sent! Status: ' + r.status);
+            }).catch(function(e) {
+                addCaptchaLog('Error sending: ' + e);
             });
         }
         
         window.addEventListener('message', function(event) {
             var data = event.data;
-            console.log('postMessage received:', typeof data, data ? JSON.stringify(data).substring(0, 100) : 'null');
+            var dataStr = data ? (typeof data === 'string' ? data.substring(0, 80) : JSON.stringify(data).substring(0, 80)) : 'null';
+            addCaptchaLog('postMessage: ' + dataStr);
             
             // Type 1: Direct token string with |r=
             if (data && typeof data === 'string' && data.includes('|r=') && !data.startsWith('{')) {
+                addCaptchaLog('Type 1: Direct token string');
                 sendCaptchaToken(data);
                 return;
             }
@@ -641,38 +666,55 @@
             // Type 2: Object with token property
             if (data && typeof data === 'object') {
                 if (data.token && typeof data.token === 'string' && data.token.includes('|r=')) {
+                    addCaptchaLog('Type 2: Object with token');
                     sendCaptchaToken(data.token);
                     return;
                 }
                 // Type 3: Nested data.data.token
-                if (data.data && data.data.token && typeof data.data.token === 'string') {
+                if (data.data && data.data.token && typeof data.data.token === 'string' && data.data.token.includes('|r=')) {
+                    addCaptchaLog('Type 3: Nested data.data.token');
                     sendCaptchaToken(data.data.token);
                     return;
                 }
                 // Type 4: solved event
                 if (data.solved === true || data.event === 'solved' || data.eventId === 'challenge-complete') {
-                    // Try to extract token from various locations
+                    addCaptchaLog('Type 4: Solved event detected!');
                     var token = data.token || data.response || data.sessionToken || (data.data && data.data.token);
-                    if (token) {
+                    if (token && token.includes('|r=')) {
                         sendCaptchaToken(token);
+                        return;
+                    } else {
+                        addCaptchaLog('Solved but no valid token in event');
+                    }
+                }
+                // Type 5: Arkose callback
+                if (data.eventId === 'challenge-suppressed' || data.eventId === 'challenge-complete') {
+                    addCaptchaLog('Arkose event: ' + data.eventId);
+                    if (data.payload && data.payload.sessionToken) {
+                        sendCaptchaToken(data.payload.sessionToken);
                         return;
                     }
                 }
             }
             
-            // Type 5: JSON string that needs parsing
+            // Type 6: JSON string that needs parsing
             if (data && typeof data === 'string' && data.startsWith('{')) {
                 try {
                     var parsed = JSON.parse(data);
+                    addCaptchaLog('Type 6: Parsed JSON');
                     if (parsed.token && parsed.token.includes('|r=')) {
                         sendCaptchaToken(parsed.token);
+                        return;
+                    }
+                    if (parsed.sessionToken && parsed.sessionToken.includes('|r=')) {
+                        sendCaptchaToken(parsed.sessionToken);
                         return;
                     }
                 } catch(e) {}
             }
         });
         
-        // Show manual button after 3 seconds of captcha display
+        // Show manual button after captcha display - but only if we have a valid token
         var captchaShownTime = null;
         
         setInterval(function() {
@@ -683,47 +725,30 @@
             
             if (captchaZone.classList.contains('active')) {
                 if (!captchaShownTime) captchaShownTime = Date.now();
-                // Show manual button after 5 seconds
-                if (Date.now() - captchaShownTime > 5000) {
+                // Show manual button after 10 seconds (only useful if token detected)
+                if (Date.now() - captchaShownTime > 10000 && detectedToken) {
                     btnDone.classList.add('active');
+                    btnDone.textContent = '✅ Envoyer le token détecté';
                 }
             } else {
                 captchaShownTime = null;
                 btnDone.classList.remove('active');
             }
-            
-            // Also try to request token from iframe
-            var frame = document.getElementById('captcha-frame');
-            if (frame && frame.contentWindow) {
-                try {
-                    frame.contentWindow.postMessage({action: 'getToken'}, '*');
-                } catch(e) {}
-            }
         }, 1000);
         
         function manualCaptchaDone() {
-            // User confirms captcha is solved - send a placeholder token
-            // The backend will detect this and try to proceed
+            // Only works if we have a real token
             if (captchaSent) return;
             
-            // Try to get token from iframe URL or localStorage
-            var frame = document.getElementById('captcha-frame');
-            var token = 'MANUAL_CONFIRM_' + Date.now();
-            
-            // Check if we have a token stored
-            try {
-                var storedToken = localStorage.getItem('arkose_token');
-                if (storedToken && storedToken.includes('|r=')) {
-                    token = storedToken;
-                }
-            } catch(e) {}
-            
-            console.log('Manual captcha confirmation, token:', token.substring(0, 50));
-            sendCaptchaToken(token);
-            
-            // Hide button and show confirmation
-            document.getElementById('btn-captcha-done').textContent = '✓ Envoyé!';
-            document.getElementById('btn-captcha-done').style.background = '#666';
+            if (detectedToken && detectedToken.includes('|r=')) {
+                addCaptchaLog('Manual send of detected token');
+                sendCaptchaToken(detectedToken);
+                document.getElementById('btn-captcha-done').textContent = '✓ Envoyé!';
+                document.getElementById('btn-captcha-done').style.background = '#666';
+            } else {
+                addCaptchaLog('No valid token detected yet - solve the captcha first!');
+                alert('Aucun token Arkose détecté! Résous le captcha complètement.');
+            }
         }
         
         // Init
