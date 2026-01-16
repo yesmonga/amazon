@@ -43,4 +43,4 @@ COPY . .
 EXPOSE 5000
 
 # Run with gunicorn on dynamic PORT with logging
-CMD gunicorn --workers 1 --bind 0.0.0.0:$PORT --timeout 120 --access-logfile - --error-logfile - --capture-output --enable-stdio-inheritance app:app
+CMD gunicorn --workers 1 --bind 0.0.0.0:$PORT --timeout 120 --access-logfile /dev/null --error-logfile - --capture-output --enable-stdio-inheritance app:app

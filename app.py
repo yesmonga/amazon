@@ -208,13 +208,19 @@ def get_otp_from_email(target_email, max_wait=120, check_interval=5):
     target_local = target_email.split('@')[0].lower()
     start_time = time.time()
     while time.time() - start_time < max_wait:
+        # Check if generation was stopped or email changed
+        with state_lock:
+            current_email = generation_state.get('email')
+            if not generation_state['active'] or current_email != target_email:
+                add_log('IMAP: Generation stopped or email changed, aborting', 'warning')
+                return None
         try:
             mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
             mail.login(IMAP_USER, IMAP_PASSWORD)
             mail.select('INBOX')
             _, messages = mail.search(None, '(UNSEEN)')
             email_ids = messages[0].split() if messages[0] else []
-            add_log(f'IMAP: {len(email_ids)} unread emails', 'info')
+            add_log(f'IMAP: {len(email_ids)} unread', 'info')
             if email_ids:
                 for email_id in reversed(email_ids[-20:]):
                     _, msg_data = mail.fetch(email_id, '(BODY.PEEK[])')
