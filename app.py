@@ -602,7 +602,7 @@ def run_generation():
                     if vts:
                         add_log(f'SMS verifyToken: {vts[:30]}...', 'info')
                         add_log('Adding phone number...', 'info')
-                        time.sleep(3)
+                        time.sleep(5)  # 5s comme bot manuel
                         
                         sms_ok = False
                         for sa in range(5):
@@ -644,12 +644,12 @@ def run_generation():
                                     add_log(f'{email_addr}', 'success')
                                     set_step('success')
                                     sms_ok = True
-                                    break
+                                    time.sleep(2); continue  # Essayer autre numéro
                                 else:
                                     add_log('SMS not received', 'warning')
-                            elif 'cvf-number-blocked' in rph.text:
-                                add_log('Number blocked by Amazon!', 'error')
-                                break
+                            elif 'cvf-number-blocked' in rph.text or 'activité inhabituelle' in rph.text:
+                                add_log('Number blocked, trying another...', 'warning')
+                                time.sleep(2); continue  # Essayer autre numéro
                             else:
                                 add_log('Phone rejected', 'warning')
                         
