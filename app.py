@@ -341,7 +341,12 @@ def run_generation():
         else:
             add_log('GET form failed', 'error'); set_step('error'); return
         
-        soup = BeautifulSoup(rg.text, 'html.parser')
+        soup = BeautifulSoup(rg.text, "html.parser")
+        
+        # Debug: log page info
+        title = soup.find("title")
+        add_log(f"Page title: {title.text[:40] if title else "N/A"}", "info")
+        add_log(f"Final URL: {rg.url[:50]}", "info")
         form = soup.find('form', id='ap_register_form')
         if not form:
             add_log('Form not found!', 'error'); set_step('error'); return
