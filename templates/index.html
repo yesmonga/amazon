@@ -306,30 +306,38 @@
             background: var(--bg-card);
             border-radius: 14px;
             position: relative;
+            padding-right: 60px;
         }
         .account-actions {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
             display: flex;
             gap: 8px;
-            margin-top: 10px;
+        }
+        .btn-icon {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-copy {
+            background: var(--bg-light);
+            color: white;
         }
         .btn-open {
-            flex: 1;
-            padding: 10px;
-            border: none;
-            border-radius: 10px;
             background: var(--primary);
             color: white;
-            font-weight: 600;
-            cursor: pointer;
         }
         .btn-delete {
-            padding: 10px 15px;
-            border: none;
-            border-radius: 10px;
-            background: var(--error);
-            color: white;
-            font-weight: 600;
-            cursor: pointer;
+            background: rgba(255,71,87,0.2);
+            color: var(--error);
             padding: 16px;
             margin-bottom: 12px;
             border: 1px solid rgba(255,255,255,0.08);
@@ -641,8 +649,9 @@
                             <div class="account-pass">MDP: ${a.password}</div>
                             <div class="account-date">${a.created_at || ''}</div>
                             <div class="account-actions">
-                                <button class="btn-open" onclick="openAccount(${a.id})">🌐 Ouvrir</button>
-                                <button class="btn-delete" onclick="deleteAccount(${a.id})">🗑️</button>
+                                <button class="btn-icon btn-copy" onclick="copyAccountCookies(${a.id})" title="Copier cookies">📋</button>
+                                <button class="btn-icon btn-open" onclick="openAccount(${a.id})" title="Ouvrir session">🌐</button>
+                                <button class="btn-icon btn-delete" onclick="deleteAccount(${a.id})" title="Supprimer">🗑️</button>
                             </div>
                         </div>
                     `).join('');

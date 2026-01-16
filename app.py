@@ -864,13 +864,57 @@ def delete_account(account_id):
         return jsonify({'success': True})
     return jsonify({'error': 'Failed to delete'}), 500
 
+@app.route('/api/account/<int:account_id>/cookies')
+def get_account_cookies(account_id):
+    account = get_account_by_id(account_id)
+    if not account:
+        return jsonify({'error': 'Not found'}), 404
+    try:
+        cookies = json.loads(account['cookies']) if isinstance(account['cookies'], str) else account['cookies']
+        return jsonify({'cookies': cookies})
+    except:
+        return jsonify({'cookies': account['cookies']})
+
 @app.route('/session/<int:account_id>')
 def open_session(account_id):
     account = get_account_by_id(account_id)
     if not account:
         return "Compte non trouvé", 404
-    cookies = account['cookies']
-    return render_template('session.html', account_id=account_id, email=account['email'], cookies=cookies)
+    return render_template('session.html', account_id=account_id, email=account['email'])
+
+@app.route('/proxy/<int:account_id>')
+def proxy_amazon(account_id):
+    account = get_account_by_id(account_id)
+    if not account:
+        return "Compte non trouvé", 404
+    
+    try:
+        cookies_data = json.loads(account['cookies']) if isinstance(account['cookies'], str) else account['cookies']
+    except:
+        cookies_data = {}
+    
+    session = requests.Session()
+    for name, value in cookies_data.items():
+        session.cookies.set(name, value, domain='.amazon.fr')
+    
+    url = 'https://www.amazon.fr/gp/movers-and-shakers/?ref_=nav_em_ms_0_1_1_4'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'fr-FR,fr;q=0.9',
+    }
+    
+    try:
+        resp = session.get(url, headers=headers, timeout=30)
+        html = resp.text
+        # Remplacer les liens relatifs
+        html = html.replace('href="/', 'href="https://www.amazon.fr/')
+        html = html.replace('src="/', 'src="https://www.amazon.fr/')
+        html = html.replace("href='/", "href='https://www.amazon.fr/")
+        html = html.replace("src='/", "src='https://www.amazon.fr/")
+        return html
+    except Exception as e:
+        return f"Erreur: {str(e)}", 500
 
 @app.route('/api/captcha/start', methods=['POST'])
 def start_captcha():
