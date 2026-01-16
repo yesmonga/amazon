@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Amazon Giveaway Manager</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#ff6b35">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <style>
+        :root {
+            --primary: #ff6b35;
+            --success: #00d26a;
+            --error: #ff4757;
+            --warning: #ffa502;
+            --bg-dark: #0f0f23;
+            --bg-card: #1a1a2e;
+            --bg-light: #252542;
+            --text: #ffffff;
+            --text-muted: #8b8b9e;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 20px; color: var(--primary); }
+        
+        .input-section {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .input-group input {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            background: var(--bg-light);
+            color: var(--text);
+            font-size: 16px;
+        }
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), #ff8f5a);
+            color: white;
+        }
+        .btn-primary:hover { transform: scale(1.02); }
+        .btn-danger {
+            background: var(--error);
+            color: white;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+        }
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+        .stat-success .stat-value { color: var(--success); }
+        .stat-already .stat-value { color: var(--warning); }
+        .stat-error .stat-value { color: var(--error); }
+        .stat-pending .stat-value { color: var(--text-muted); }
+        
+        .accounts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 15px;
+        }
+        .account-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 15px;
+            border-left: 4px solid var(--text-muted);
+        }
+        .account-card.success { border-left-color: var(--success); }
+        .account-card.already { border-left-color: var(--warning); }
+        .account-card.error { border-left-color: var(--error); }
+        .account-card.running { border-left-color: var(--primary); }
+        
+        .account-email {
+            font-weight: bold;
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+        .account-status {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-success { background: var(--success); }
+        .status-already { background: var(--warning); color: #000; }
+        .status-error { background: var(--error); }
+        .status-pending { background: var(--bg-light); }
+        .status-running { background: var(--primary); }
+        
+        .account-log {
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--text-muted);
+            max-height: 60px;
+            overflow-y: auto;
+        }
+        
+        .progress-bar {
+            height: 8px;
+            background: var(--bg-light);
+            border-radius: 4px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--success), var(--primary));
+            transition: width 0.3s;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: var(--primary);
+            text-decoration: none;
+        }
+        .back-link:hover { text-decoration: underline; }
+        
+        @media (max-width: 768px) {
+            .stats { grid-template-columns: repeat(2, 1fr); }
+            .accounts-grid { grid-template-columns: 1fr; }
+            .input-group { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-link">← Retour</a>
+        <h1>🎁 Giveaway Manager</h1>
+        
+        <div class="input-section">
+            <div class="input-group">
+                <input type="text" id="productId" placeholder="Code produit (ex: B0DSQ9W4J4)">
+                <button class="btn btn-primary" onclick="startGiveaway()">🚀 Lancer</button>
+                <button class="btn btn-danger" onclick="stopGiveaway()">⏹ Stop</button>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressBar" style="width: 0%"></div>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-card stat-success">
+                <div class="stat-value" id="statSuccess">0</div>
+                <div class="stat-label">Succès</div>
+            </div>
+            <div class="stat-card stat-already">
+                <div class="stat-value" id="statAlready">0</div>
+                <div class="stat-label">Déjà inscrit</div>
+            </div>
+            <div class="stat-card stat-error">
+                <div class="stat-value" id="statError">0</div>
+                <div class="stat-label">Erreurs</div>
+            </div>
+            <div class="stat-card stat-pending">
+                <div class="stat-value" id="statPending">0</div>
+                <div class="stat-label">En attente</div>
+            </div>
+        </div>
+        
+        <div class="accounts-grid" id="accountsGrid">
+            <!-- Cards will be added here -->
+        </div>
+    </div>
+    
+    <script>
+        let pollInterval = null;
+        let isRunning = false;
+        
+        async function loadAccounts() {
+            try {
+                const res = await fetch('/api/giveaway/accounts');
+                const data = await res.json();
+                renderAccounts(data.accounts || []);
+            } catch (e) {
+                console.error('Error loading accounts:', e);
+            }
+        }
+        
+        function renderAccounts(accounts) {
+            const grid = document.getElementById('accountsGrid');
+            grid.innerHTML = '';
+            
+            let success = 0, already = 0, error = 0, pending = 0;
+            
+            accounts.forEach(acc => {
+                const card = document.createElement('div');
+                card.className = 'account-card ' + (acc.status || 'pending');
+                
+                let statusClass = 'status-pending';
+                let statusText = 'En attente';
+                
+                if (acc.status === 'success') {
+                    statusClass = 'status-success';
+                    statusText = '✓ Inscrit';
+                    success++;
+                } else if (acc.status === 'already') {
+                    statusClass = 'status-already';
+                    statusText = 'Déjà inscrit';
+                    already++;
+                } else if (acc.status === 'error' || acc.status === 'unavailable') {
+                    statusClass = 'status-error';
+                    statusText = acc.error || 'Erreur';
+                    error++;
+                } else if (acc.status === 'running') {
+                    statusClass = 'status-running';
+                    statusText = '⏳ En cours...';
+                } else {
+                    pending++;
+                }
+                
+                card.innerHTML = `
+                    <div class="account-email">${acc.email}</div>
+                    <span class="account-status ${statusClass}">${statusText}</span>
+                    ${acc.log ? `<div class="account-log">${acc.log}</div>` : ''}
+                `;
+                grid.appendChild(card);
+            });
+            
+            document.getElementById('statSuccess').textContent = success;
+            document.getElementById('statAlready').textContent = already;
+            document.getElementById('statError').textContent = error;
+            document.getElementById('statPending').textContent = pending;
+            
+            const total = accounts.length;
+            const done = success + already + error;
+            const percent = total > 0 ? (done / total * 100) : 0;
+            document.getElementById('progressBar').style.width = percent + '%';
+        }
+        
+        async function startGiveaway() {
+            const productId = document.getElementById('productId').value.trim();
+            if (!productId) {
+                alert('Entrez un code produit!');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/giveaway/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({product_id: productId})
+                });
+                const data = await res.json();
+                if (data.success) {
+                    isRunning = true;
+                    startPolling();
+                } else {
+                    alert('Erreur: ' + (data.error || 'Unknown'));
+                }
+            } catch (e) {
+                alert('Erreur: ' + e.message);
+            }
+        }
+        
+        async function stopGiveaway() {
+            try {
+                await fetch('/api/giveaway/stop', {method: 'POST'});
+                isRunning = false;
+                stopPolling();
+            } catch (e) {
+                console.error('Error stopping:', e);
+            }
+        }
+        
+        async function pollState() {
+            try {
+                const res = await fetch('/api/giveaway/state');
+                const data = await res.json();
+                renderAccounts(data.accounts || []);
+                
+                if (!data.running && isRunning) {
+                    isRunning = false;
+                    stopPolling();
+                }
+            } catch (e) {
+                console.error('Poll error:', e);
+            }
+        }
+        
+        function startPolling() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(pollState, 1000);
+        }
+        
+        function stopPolling() {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
+        
+        // Load accounts on page load
+        loadAccounts();
+    </script>
+</body>
+</html>

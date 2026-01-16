@@ -1240,3 +1240,252 @@ def run_gen_multi(gen_id):
         with gen_lock:
             if gen_id in generations:
                 generations[gen_id]['active'] = False
+
+# ========== GIVEAWAY SYSTEM ==========
+giveaway_state = {
+    'running': False,
+    'product_id': None,
+    'accounts': {}  # email -> {status, log, error}
+}
+giveaway_lock = threading.Lock()
+
+def init_giveaway_table():
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute('''CREATE TABLE IF NOT EXISTS giveaway_participations (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) NOT NULL,
+                product_id VARCHAR(50) NOT NULL,
+                status VARCHAR(50) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(email, product_id)
+            )''')
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"Giveaway table error: {e}")
+
+def get_giveaway_status(email, product_id):
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT status FROM giveaway_participations WHERE email = %s AND product_id = %s", (email, product_id))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            return row['status'] if row else None
+        except:
+            pass
+    return None
+
+def save_giveaway_status(email, product_id, status):
+    conn = get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute('''INSERT INTO giveaway_participations (email, product_id, status) 
+                          VALUES (%s, %s, %s) 
+                          ON CONFLICT (email, product_id) DO UPDATE SET status = EXCLUDED.status''',
+                       (email, product_id, status))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"Save giveaway error: {e}")
+
+@app.route('/giveaway')
+def giveaway_page():
+    return render_template('giveaway.html')
+
+@app.route('/api/giveaway/accounts')
+def giveaway_accounts():
+    accounts = get_all_accounts()
+    result = []
+    for acc in accounts:
+        result.append({
+            'email': acc['email'],
+            'status': 'pending',
+            'log': None
+        })
+    return jsonify({'accounts': result})
+
+@app.route('/api/giveaway/start', methods=['POST'])
+def giveaway_start():
+    global giveaway_state
+    data = request.get_json() or {}
+    product_id = data.get('product_id', '').strip()
+    
+    if not product_id:
+        return jsonify({'error': 'Product ID required'}), 400
+    
+    with giveaway_lock:
+        if giveaway_state['running']:
+            return jsonify({'error': 'Already running'}), 400
+        
+        giveaway_state['running'] = True
+        giveaway_state['product_id'] = product_id
+        giveaway_state['accounts'] = {}
+    
+    # Start giveaway thread
+    t = threading.Thread(target=run_giveaway, args=(product_id,))
+    t.daemon = True
+    t.start()
+    
+    return jsonify({'success': True})
+
+@app.route('/api/giveaway/state')
+def giveaway_get_state():
+    with giveaway_lock:
+        accounts = []
+        for email, data in giveaway_state['accounts'].items():
+            accounts.append({
+                'email': email,
+                'status': data.get('status', 'pending'),
+                'log': data.get('log'),
+                'error': data.get('error')
+            })
+        return jsonify({
+            'running': giveaway_state['running'],
+            'product_id': giveaway_state['product_id'],
+            'accounts': accounts
+        })
+
+@app.route('/api/giveaway/stop', methods=['POST'])
+def giveaway_stop():
+    global giveaway_state
+    with giveaway_lock:
+        giveaway_state['running'] = False
+    return jsonify({'success': True})
+
+def update_giveaway_account(email, status, log=None, error=None):
+    with giveaway_lock:
+        if email not in giveaway_state['accounts']:
+            giveaway_state['accounts'][email] = {}
+        giveaway_state['accounts'][email]['status'] = status
+        if log:
+            giveaway_state['accounts'][email]['log'] = log
+        if error:
+            giveaway_state['accounts'][email]['error'] = error
+
+def run_giveaway(product_id):
+    global giveaway_state
+    try:
+        accounts = get_all_accounts()
+        print(f"[GIVEAWAY] Starting for {product_id} with {len(accounts)} accounts")
+        
+        for acc in accounts:
+            with giveaway_lock:
+                if not giveaway_state['running']:
+                    break
+            
+            email = acc['email']
+            cookies = json.loads(acc['cookies']) if acc['cookies'] else {}
+            
+            # Check if already participated
+            existing = get_giveaway_status(email, product_id)
+            if existing in ['success', 'already']:
+                update_giveaway_account(email, existing, f"Already: {existing}")
+                continue
+            
+            update_giveaway_account(email, 'running', 'Connecting...')
+            
+            try:
+                result = participate_giveaway_account(email, cookies, product_id)
+                update_giveaway_account(email, result['status'], result.get('log'), result.get('error'))
+                save_giveaway_status(email, product_id, result['status'])
+            except Exception as e:
+                update_giveaway_account(email, 'error', str(e)[:50], str(e))
+                save_giveaway_status(email, product_id, 'error')
+            
+            time.sleep(2)  # Delay between accounts
+        
+    except Exception as e:
+        print(f"[GIVEAWAY] Error: {e}")
+    finally:
+        with giveaway_lock:
+            giveaway_state['running'] = False
+
+def participate_giveaway_account(email, cookies, product_id):
+    """Participate in giveaway for a single account"""
+    from curl_cffi import requests as curl_requests
+    
+    session = curl_requests.Session(impersonate="chrome120")
+    session.cookies.clear()
+    
+    # Load cookies
+    for name, value in cookies.items():
+        session.cookies.set(name, value, domain='.amazon.fr')
+    
+    headers = {
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'accept-language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'none',
+        'upgrade-insecure-requests': '1'
+    }
+    
+    # Get product page
+    url = f'https://www.amazon.fr/dp/{product_id}'
+    resp = session.get(url, headers=headers, timeout=30)
+    
+    if resp.status_code != 200:
+        return {'status': 'error', 'error': f'Status {resp.status_code}'}
+    
+    html = resp.text
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    # Check if invite button exists and is active
+    invite_btn = soup.find('input', attrs={'name': 'submit.inviteButton'})
+    if invite_btn and not invite_btn.get('disabled'):
+        # Can participate - extract data and submit
+        csrf_input = soup.find('input', attrs={'id': 'hdp-ib-csrf-token'})
+        ajax_input = soup.find('input', attrs={'id': 'hdp-ib-ajax-endpoint'})
+        
+        if not csrf_input or not ajax_input:
+            return {'status': 'error', 'error': 'Missing tokens'}
+        
+        csrf_token = csrf_input.get('value', '')
+        ajax_endpoint = ajax_input.get('value', '')
+        
+        # Submit invitation request
+        if ajax_endpoint:
+            ajax_url = f'https://{ajax_endpoint}'
+            post_headers = headers.copy()
+            post_headers['content-type'] = 'application/x-www-form-urlencoded'
+            post_headers['referer'] = url
+            post_headers['x-csrf-token'] = csrf_token
+            
+            post_data = {'anti-csrftoken-a2z': csrf_token}
+            
+            try:
+                resp2 = session.post(ajax_url, headers=post_headers, data=post_data, timeout=30)
+                if resp2.status_code == 200:
+                    return {'status': 'success', 'log': 'Invitation demandée!'}
+                else:
+                    return {'status': 'error', 'error': f'POST status {resp2.status_code}'}
+            except Exception as e:
+                return {'status': 'error', 'error': str(e)[:50]}
+        
+        return {'status': 'error', 'error': 'No ajax endpoint'}
+    
+    # Check if already requested
+    requested_div = soup.find('div', attrs={'id': 'hdp-detail-requested-id'})
+    if requested_div:
+        classes = requested_div.get('class', [])
+        if 'aok-hidden' not in classes:
+            return {'status': 'already', 'log': 'Déjà inscrit'}
+    
+    # Check if unavailable
+    return {'status': 'unavailable', 'error': 'Tirage fermé ou indisponible'}
+
+# Initialize giveaway table
+try:
+    init_giveaway_table()
+except:
+    pass
