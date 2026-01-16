@@ -1414,12 +1414,22 @@ def participate_giveaway_account(email, cookies, product_id):
     from curl_cffi import requests as curl_requests
     import re
     
+    # Create fresh session for each account
     session = curl_requests.Session(impersonate="chrome110")
-    session.cookies.clear()
     
-    # Load cookies
+    # Clear ALL cookies first
+    session.cookies.clear()
+    for domain in ['.amazon.fr', 'amazon.fr', 'www.amazon.fr', 'data.amazon.fr']:
+        try:
+            session.cookies.clear(domain=domain)
+        except:
+            pass
+    
+    # Load ONLY this account's cookies
     for name, value in cookies.items():
         session.cookies.set(name, value, domain='.amazon.fr')
+    
+    print(f"[GIVEAWAY] {email} - cookies loaded: {len(cookies)}", flush=True)
     
     headers = {
         'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
