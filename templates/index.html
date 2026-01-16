@@ -397,8 +397,12 @@
                         <span class="captcha-header-text">Résous le captcha</span>
                     </div>
                     <iframe id="captcha-frame" class="captcha-frame"></iframe>
-                    <div id="captcha-debug" style="background:#1a1a2e;padding:8px;font-size:11px;max-height:100px;overflow-y:auto;color:#0f0;font-family:monospace;"></div>
-                    <button class="btn-captcha-done" id="btn-captcha-done" onclick="manualCaptchaDone()">✅ J'ai résolu le captcha</button>
+                    <div id="captcha-debug" style="background:#1a1a2e;padding:8px;font-size:11px;max-height:80px;overflow-y:auto;color:#0f0;font-family:monospace;"></div>
+                    <div style="padding:10px;background:#1a1a2e;">
+                        <div style="color:#ff6b35;font-size:12px;margin-bottom:6px;">📋 Token Arkose (DevTools > Network > chercher |r=):</div>
+                        <input type="text" id="manual-token" placeholder="Coller le token ici..." style="width:100%;padding:8px;border:1px solid #333;border-radius:6px;background:#0f0f23;color:#fff;font-size:11px;font-family:monospace;">
+                    </div>
+                    <button class="btn-captcha-done" id="btn-captcha-done" onclick="manualCaptchaDone()" style="display:block;">✅ Envoyer le token</button>
                 </div>
                 
                 <div class="logs" id="logs" style="display:none;"></div>
@@ -765,43 +769,30 @@
         function manualCaptchaDone() {
             if (captchaSent) return;
             
+            // Check manual input first
+            var manualInput = document.getElementById('manual-token');
+            var manualToken = manualInput ? manualInput.value.trim() : '';
+            
+            if (manualToken && manualToken.includes('|r=')) {
+                addCaptchaLog('Using manual token: ' + manualToken.substring(0, 50) + '...');
+                sendCaptchaToken(manualToken);
+                document.getElementById('btn-captcha-done').textContent = '✓ Token envoyé!';
+                document.getElementById('btn-captcha-done').style.background = '#666';
+                return;
+            }
+            
             // If we have a detected token, use it
             if (detectedToken && detectedToken.includes('|r=')) {
-                addCaptchaLog('Sending detected token');
+                addCaptchaLog('Using detected token');
                 sendCaptchaToken(detectedToken);
                 document.getElementById('btn-captcha-done').textContent = '✓ Envoyé!';
                 document.getElementById('btn-captcha-done').style.background = '#666';
                 return;
             }
             
-            // If challenge is complete but no token, try to get it from iframe
-            if (challengeComplete) {
-                addCaptchaLog('Challenge complete - requesting token from iframe...');
-                
-                // Try to communicate with iframe
-                var frame = document.getElementById('captcha-frame');
-                if (frame && frame.contentWindow) {
-                    frame.contentWindow.postMessage({action: 'getToken'}, '*');
-                    frame.contentWindow.postMessage('getToken', '*');
-                }
-                
-                // Send a signal to backend that captcha is solved (backend will use stored session)
-                addCaptchaLog('Sending CAPTCHA_SOLVED signal to backend');
-                captchaSent = true;
-                fetch('/api/captcha', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({token: 'CAPTCHA_SOLVED_NO_TOKEN'})
-                }).then(function(r) {
-                    addCaptchaLog('Signal sent: ' + r.status);
-                });
-                
-                document.getElementById('btn-captcha-done').textContent = '✓ Signal envoyé!';
-                document.getElementById('btn-captcha-done').style.background = '#666';
-            } else {
-                addCaptchaLog('Captcha not solved yet!');
-                alert('Résous le captcha d\'abord!');
-            }
+            // No valid token
+            addCaptchaLog('No valid token! Paste token from DevTools.');
+            alert('Colle le token Arkose depuis DevTools!\n\n1. Ouvre DevTools (F12)\n2. Onglet Network\n3. Résous le captcha\n4. Cherche une requête avec |r= dans la réponse\n5. Copie le token et colle-le');
         }
         
         // Init
