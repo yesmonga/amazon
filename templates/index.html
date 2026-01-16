@@ -394,9 +394,12 @@
                 <div class="captcha-zone" id="captcha-zone">
                     <div class="captcha-header">
                         <span class="captcha-header-icon">🔐</span>
-                        <span class="captcha-header-text">Résous le captcha</span>
+                        <span class="captcha-header-text">Clique sur l'image pour résoudre</span>
                     </div>
-                    <iframe id="captcha-frame" class="captcha-frame"></iframe>
+                    <div id="captcha-container" style="position:relative;width:100%;text-align:center;">
+                        <img id="captcha-img" style="max-width:100%;border-radius:8px;cursor:crosshair;" onclick="handleCaptchaClick(event)">
+                        <div id="captcha-loading" style="padding:50px;color:#888;">Chargement du captcha...</div>
+                    </div>
                     <div id="captcha-debug" style="background:#1a1a2e;padding:8px;font-size:11px;max-height:80px;overflow-y:auto;color:#0f0;font-family:monospace;"></div>
                     <div style="padding:10px;background:#1a1a2e;">
                         <div style="color:#ff6b35;font-size:12px;margin-bottom:6px;">📋 Token Arkose (DevTools > Network > chercher |r=):</div>
@@ -542,13 +545,13 @@
                 document.getElementById('status-step').style.display = 'none';
             }
             
-            // Captcha zone
+            // Captcha zone - use Playwright solver
             const captchaZone = document.getElementById('captcha-zone');
             if (state.step === 'waiting_captcha' && state.captcha_url) {
                 captchaZone.classList.add('active');
-                const frame = document.getElementById('captcha-frame');
-                if (frame.src !== state.captcha_url) {
-                    frame.src = state.captcha_url;
+                // Start Playwright solver instead of showing iframe
+                if (!captchaPollInterval) {
+                    startCaptchaSolver(state.captcha_url);
                 }
             } else {
                 captchaZone.classList.remove('active');

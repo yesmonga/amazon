@@ -14,6 +14,14 @@ from flask import Flask, render_template, jsonify, request
 from bs4 import BeautifulSoup
 from urllib.parse import quote, unquote
 
+# Import captcha solver
+try:
+    from captcha_solver import start_captcha_solver, click_captcha, get_captcha_state, stop_captcha_solver
+    PLAYWRIGHT_AVAILABLE = True
+except:
+    PLAYWRIGHT_AVAILABLE = False
+    print("Playwright not available, using fallback mode")
+
 PASSWORD = os.environ.get('AMAZON_PASSWORD', 'Faure02112002@')
 IMAP_SERVER = os.environ.get('IMAP_SERVER', 'imap.mail.me.com')
 IMAP_PORT = int(os.environ.get('IMAP_PORT', '993'))
@@ -752,6 +760,42 @@ def get_accounts():
     accounts = get_all_accounts()
     formatted = [{'email': a['email'], 'password': a['password'], 'cookies': a['cookies'], 'created_at': str(a['created_at']) if a['created_at'] else None} for a in accounts]
     return jsonify({'accounts': formatted, 'count': len(formatted)})
+
+@app.route('/api/captcha/start', methods=['POST'])
+def start_captcha():
+    if not PLAYWRIGHT_AVAILABLE:
+        return jsonify({'error': 'Playwright not available'}), 500
+    data = request.get_json()
+    url = data.get('url', '')
+    if not url:
+        return jsonify({'error': 'URL required'}), 400
+    start_captcha_solver(url)
+    return jsonify({'success': True})
+
+@app.route('/api/captcha/click', methods=['POST'])
+def captcha_click():
+    if not PLAYWRIGHT_AVAILABLE:
+        return jsonify({'error': 'Playwright not available'}), 500
+    data = request.get_json()
+    x = data.get('x', 0)
+    y = data.get('y', 0)
+    success = click_captcha(x, y)
+    state = get_captcha_state()
+    return jsonify({'success': success, 'state': state})
+
+@app.route('/api/captcha/state')
+def captcha_state():
+    if not PLAYWRIGHT_AVAILABLE:
+        return jsonify({'error': 'Playwright not available'}), 500
+    state = get_captcha_state()
+    return jsonify(state)
+
+@app.route('/api/captcha/stop', methods=['POST'])
+def captcha_stop():
+    if not PLAYWRIGHT_AVAILABLE:
+        return jsonify({'error': 'Playwright not available'}), 500
+    stop_captcha_solver()
+    return jsonify({'success': True})
 
 @app.route('/manifest.json')
 def manifest():
