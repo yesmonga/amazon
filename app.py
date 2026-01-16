@@ -474,6 +474,14 @@ def run_generation():
         
         sw = time.time()
         while time.time() - sw < 300:
+            # Check captcha solver state for token
+            if PLAYWRIGHT_AVAILABLE:
+                solver_state = get_captcha_state()
+                if solver_state['token'] and solver_state['solved']:
+                    with state_lock:
+                        generation_state['captcha_token'] = solver_state['token']
+                    add_log('Token captured from Playwright solver!', 'success')
+                    break
             with state_lock:
                 if generation_state['captcha_token']: break
                 if not generation_state['active']: add_log('Cancelled', 'warning'); return
