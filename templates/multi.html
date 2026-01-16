@@ -178,7 +178,7 @@
             background: var(--bg-dark);
             border-radius: 8px;
             padding: 8px;
-            max-height: 120px;
+            max-height: 200px;
             overflow-y: auto;
             font-size: 11px;
             font-family: monospace;
@@ -192,9 +192,6 @@
         .gen-log.error { color: var(--error); }
         .gen-log.warning { color: var(--warning); }
         .btn-stop-gen {
-            position: absolute;
-            top: 10px;
-            right: 10px;
             width: 28px;
             height: 28px;
             border: none;
@@ -203,6 +200,7 @@
             color: var(--error);
             font-size: 14px;
             cursor: pointer;
+            margin-left: auto;
         }
         .stats-bar {
             display: flex;
@@ -358,12 +356,12 @@
                     };
                     
                     html += '<div class="' + cardClass + '" id="card-' + genId + '">';
-                    if (gen.active) {
-                        html += '<button class="btn-stop-gen" onclick="stopGen(\'' + genId + '\')">✕</button>';
-                    }
                     html += '<div class="gen-header">';
                     html += '<span class="gen-id">' + genId + '</span>';
                     html += '<span class="gen-status ' + gen.step + '">' + (statusLabels[gen.step] || gen.step) + '</span>';
+                    if (gen.active) {
+                        html += '<button class="btn-stop-gen" onclick="stopGen(\'' + genId + '\')">✕</button>';
+                    }
                     html += '</div>';
                     
                     if (gen.email) {
@@ -378,10 +376,10 @@
                         html += '</div>';
                     }
                     
-                    // Logs
-                    html += '<div class="gen-logs">';
+                    // Logs - show last 15 entries
+                    html += '<div class="gen-logs" id="logs-' + genId + '">';
                     if (gen.logs) {
-                        gen.logs.slice(-10).forEach(function(log) {
+                        gen.logs.slice(-15).forEach(function(log) {
                             html += '<div class="gen-log ' + log.type + '">[' + log.time + '] ' + log.message + '</div>';
                         });
                     }
@@ -391,6 +389,11 @@
                 }
                 
                 grid.innerHTML = html;
+                
+                // Auto-scroll logs to bottom
+                document.querySelectorAll('.gen-logs').forEach(function(logsEl) {
+                    logsEl.scrollTop = logsEl.scrollHeight;
+                });
                 
                 // Check if all done
                 if (!hasActive && Object.keys(data.generations).length > 0) {

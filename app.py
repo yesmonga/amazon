@@ -277,6 +277,58 @@ def get_otp_from_email(target_email, max_wait=120, check_interval=5):
         time.sleep(check_interval)
     return None
 
+def get_otp_from_email_multi(target_email, gen_id, max_wait=120, check_interval=5):
+    """Get OTP for multi-gen - uses gen_id to check if still active"""
+    print(f'[IMAP] Checking OTP for {target_email}...', flush=True)
+    time.sleep(5)
+    target_local = target_email.split('@')[0].lower()
+    start_time = time.time()
+    while time.time() - start_time < max_wait:
+        # Check if generation was stopped
+        gen = get_gen(gen_id)
+        if not gen or not gen.get('active'):
+            print(f'[IMAP] Gen {gen_id} stopped, aborting', flush=True)
+            return None
+        try:
+            mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
+            mail.login(IMAP_USER, IMAP_PASSWORD)
+            mail.select('INBOX')
+            _, messages = mail.search(None, '(UNSEEN)')
+            email_ids = messages[0].split() if messages[0] else []
+            add_gen_log(gen_id, f'IMAP: {len(email_ids)} unread', 'info')
+            if email_ids:
+                for email_id in reversed(email_ids[-20:]):
+                    _, msg_data = mail.fetch(email_id, '(BODY.PEEK[])')
+                    for response_part in msg_data:
+                        if isinstance(response_part, tuple):
+                            msg = email_module.message_from_bytes(response_part[1])
+                            from_addr = msg.get('From', '').lower()
+                            to_addr = msg.get('To', '').lower()
+                            if 'amazon' in from_addr:
+                                body = ''
+                                if msg.is_multipart():
+                                    for part in msg.walk():
+                                        if part.get_content_type() in ['text/plain', 'text/html']:
+                                            payload = part.get_payload(decode=True)
+                                            if payload: body = payload.decode('utf-8', errors='ignore'); break
+                                else:
+                                    payload = msg.get_payload(decode=True)
+                                    if payload: body = payload.decode('utf-8', errors='ignore')
+                                is_for_target = target_email.lower() in to_addr or target_local in body.lower()
+                                if is_for_target:
+                                    otp_match = re.search(r'\b(\d{6})\b', body)
+                                    if otp_match:
+                                        mail.store(email_id, '+FLAGS', '\\Seen')
+                                        mail.logout()
+                                        add_gen_log(gen_id, 'IMAP: OTP found!', 'success')
+                                        return otp_match.group(1)
+            mail.logout()
+        except Exception as e:
+            add_gen_log(gen_id, f'IMAP error: {str(e)[:30]}', 'warning')
+        time.sleep(check_interval)
+    return None
+
+
 def get_headers_get():
     return {
         'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -1226,7 +1278,7 @@ def run_gen_multi(gen_id):
             if 'ap/cvf' in rev.url:
                 set_gen_step(gen_id, 'email_otp')
                 add_gen_log(gen_id, '=== EMAIL OTP ===', 'info')
-                otp = get_otp_from_email(email_addr)
+                otp = get_otp_from_email_multi(email_addr, gen_id)
                 if not otp:
                     add_gen_log(gen_id, 'No OTP', 'error')
                     set_gen_step(gen_id, 'error')
