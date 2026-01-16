@@ -964,3 +964,264 @@ except:
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, threaded=True)
+
+# ========== MULTI-GENERATION SYSTEM ==========
+generations = {}
+gen_lock = threading.Lock()
+gen_counter = 0
+
+def create_gen():
+    global gen_counter
+    with gen_lock:
+        gen_counter += 1
+        gen_id = f"gen_{gen_counter}"
+        generations[gen_id] = {'active': True, 'step': 'init', 'email': None, 'logs': [], 'captcha_token': None, 'captcha_screenshot': None, 'error': None}
+        return gen_id
+
+def get_gen(gen_id):
+    with gen_lock:
+        return generations.get(gen_id, {}).copy()
+
+def update_gen(gen_id, **kwargs):
+    with gen_lock:
+        if gen_id in generations:
+            generations[gen_id].update(kwargs)
+
+def add_gen_log(gen_id, msg, log_type='info'):
+    with gen_lock:
+        if gen_id in generations:
+            generations[gen_id]['logs'].append({'time': time.strftime('%H:%M:%S'), 'type': log_type, 'message': msg})
+    print(f"[{gen_id}][{log_type.upper()}] {msg}", flush=True)
+
+def set_gen_step(gen_id, step):
+    with gen_lock:
+        if gen_id in generations:
+            generations[gen_id]['step'] = step
+
+def should_gen_continue(gen_id, email):
+    with gen_lock:
+        g = generations.get(gen_id)
+        return g and g['active'] and g.get('email') == email
+
+def stop_gen(gen_id):
+    with gen_lock:
+        if gen_id in generations:
+            generations[gen_id]['active'] = False
+            generations[gen_id]['step'] = 'stopped'
+
+@app.route('/multi')
+def multi_page():
+    return render_template('multi.html')
+
+@app.route('/api/multi/start', methods=['POST'])
+def multi_start():
+    data = request.get_json() or {}
+    count = min(int(data.get('count', 1)), 5)
+    gen_ids = []
+    for _ in range(count):
+        gen_id = create_gen()
+        gen_ids.append(gen_id)
+        t = threading.Thread(target=run_gen_multi, args=(gen_id,))
+        t.daemon = True
+        t.start()
+    return jsonify({'success': True, 'gen_ids': gen_ids})
+
+@app.route('/api/multi/state')
+def multi_state():
+    with gen_lock:
+        gens = {gid: {'active': g['active'], 'step': g['step'], 'email': g['email'], 'logs': g['logs'][-20:], 'captcha_screenshot': g.get('captcha_screenshot')} for gid, g in generations.items() if g['active'] or g['step'] in ['success', 'error']}
+    return jsonify({'generations': gens})
+
+@app.route('/api/multi/stop_all', methods=['POST'])
+def multi_stop_all():
+    with gen_lock:
+        for gid in generations:
+            generations[gid]['active'] = False
+            generations[gid]['step'] = 'stopped'
+    if PLAYWRIGHT_AVAILABLE: stop_captcha_solver()
+    return jsonify({'success': True})
+
+@app.route('/api/multi/click/<gen_id>', methods=['POST'])
+def multi_click(gen_id):
+    if not PLAYWRIGHT_AVAILABLE: return jsonify({'error': 'No Playwright'}), 500
+    data = request.get_json()
+    click_captcha(data.get('x', 0), data.get('y', 0))
+    state = get_captcha_state()
+    if state.get('screenshot'):
+        with gen_lock:
+            if gen_id in generations:
+                generations[gen_id]['captcha_screenshot'] = state['screenshot']
+    return jsonify({'success': True})
+
+def run_gen_multi(gen_id):
+    try:
+        add_gen_log(gen_id, '=== STARTING ===', 'info')
+        email_addr = get_random_email()
+        if not email_addr:
+            add_gen_log(gen_id, 'No email!', 'error')
+            set_gen_step(gen_id, 'error')
+            return
+        customer_name = generate_name()
+        update_gen(gen_id, email=email_addr)
+        add_gen_log(gen_id, f'Email: {email_addr}', 'info')
+        
+        session = requests.Session()
+        proxy = get_random_proxy()
+        if proxy:
+            session.proxies = proxy
+            add_gen_log(gen_id, f'Proxy: {proxy["http"].split("@")[1]}', 'info')
+        
+        set_gen_step(gen_id, 'get_form')
+        url_get = 'https://www.amazon.fr/ap/register?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.fr%2F&openid.assoc_handle=frflex&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.mode=checkid_setup&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&pageId=frflex'
+        
+        rg = None
+        for attempt in range(3):
+            if not should_gen_continue(gen_id, email_addr): return
+            try:
+                if attempt > 0:
+                    p = get_random_proxy()
+                    if p: session.proxies = p
+                rg = session.get(url_get, headers=get_headers_get(), timeout=30)
+                if rg.status_code == 200 and 'ap_register_form' in rg.text: break
+            except: time.sleep(2)
+        
+        if not rg or 'ap_register_form' not in rg.text:
+            add_gen_log(gen_id, 'Form failed', 'error')
+            set_gen_step(gen_id, 'error')
+            return
+        
+        add_gen_log(gen_id, 'Form OK', 'success')
+        soup = BeautifulSoup(rg.text, "html.parser")
+        form = soup.find('form', id='ap_register_form')
+        hf = {inp.get('name'): inp.get('value', '') for inp in form.find_all('input', type='hidden') if inp.get('name')}
+        action_url = form.get('action')
+        if not action_url.startswith('http'): action_url = f'https://www.amazon.fr{action_url}'
+        
+        set_gen_step(gen_id, 'post_register')
+        pd = hf.copy()
+        pd.update({'email': email_addr, 'customerName': customer_name, 'password': PASSWORD, 'passwordCheck': PASSWORD})
+        rp = session.post(action_url, data=pd, headers=get_headers_post(url_get), allow_redirects=False, timeout=30)
+        add_gen_log(gen_id, f'POST: {rp.status_code}', 'info')
+        
+        loc = rp.headers.get('Location', '')
+        if loc and not loc.startswith('http'): loc = f'https://www.amazon.fr{loc}'
+        if '/ap/cvf' not in loc:
+            add_gen_log(gen_id, 'No CVF', 'error')
+            set_gen_step(gen_id, 'error')
+            return
+        
+        set_gen_step(gen_id, 'captcha')
+        rcvf = session.get(loc, headers=get_headers_get(), timeout=30)
+        arkose = re.search(r'ARKOSE_LEVEL_\d+', rcvf.text)
+        if not arkose:
+            add_gen_log(gen_id, 'No Arkose', 'error')
+            set_gen_step(gen_id, 'error')
+            return
+        add_gen_log(gen_id, arkose.group(), 'info')
+        
+        arb = loc.split('arb=')[1].split('&')[0] if 'arb=' in loc else ''
+        ra = session.get(f'https://www.amazon.fr/ap/cvf/approval/arkose?arb={arb}&language=fr_FR', headers=get_headers_get(), timeout=30)
+        iframe_m = re.search(r'(https://iframe\.arkoselabs\.com/[^"\']+)', ra.text)
+        if not iframe_m:
+            add_gen_log(gen_id, 'No iframe', 'error')
+            set_gen_step(gen_id, 'error')
+            return
+        
+        iframe_url = iframe_m.group(1).replace('&amp;', '&')
+        add_gen_log(gen_id, 'Arkose found', 'success')
+        
+        if PLAYWRIGHT_AVAILABLE:
+            add_gen_log(gen_id, '=== SOLVE CAPTCHA ===', 'warning')
+            start_captcha_solver(iframe_url)
+            sw = time.time()
+            while time.time() - sw < 300:
+                if not should_gen_continue(gen_id, email_addr): return
+                state = get_captcha_state()
+                if state.get('screenshot'): update_gen(gen_id, captcha_screenshot=state['screenshot'])
+                if state.get('token'):
+                    update_gen(gen_id, captcha_token=state['token'])
+                    add_gen_log(gen_id, 'Token!', 'success')
+                    break
+                time.sleep(1)
+            stop_captcha_solver()
+        
+        gen = get_gen(gen_id)
+        token = gen.get('captcha_token')
+        if not token:
+            add_gen_log(gen_id, 'No token', 'error')
+            set_gen_step(gen_id, 'error')
+            return
+        
+        set_gen_step(gen_id, 'verifying')
+        st_m = re.search(r'"sessionToken"\s*:\s*"([^"]+)"', rcvf.text)
+        st = st_m.group(1) if st_m else ''
+        hdrs = get_headers_post(loc)
+        hdrs['Content-Type'] = 'application/json'
+        rv = session.post(f'https://www.amazon.fr/aaut/verify/cvf/{st}', json={'aaCaptcha': token, 'verification': 'cvfInfo'}, headers=hdrs, timeout=30)
+        add_gen_log(gen_id, f'Verify: {rv.status_code}', 'info')
+        
+        soup_cvf = BeautifulSoup(rcvf.text, "html.parser")
+        cvf_form = soup_cvf.find('form')
+        cvf_hf = {inp.get('name'): inp.get('value', '') for inp in cvf_form.find_all('input', type='hidden') if inp.get('name')} if cvf_form else {}
+        vt_m = re.search(r'"verifyToken"\s*:\s*"([^"]+)"', rv.text)
+        vt = vt_m.group(1) if vt_m else cvf_hf.get('verifyToken', '')
+        if not vt:
+            add_gen_log(gen_id, 'No verifyToken', 'error')
+            set_gen_step(gen_id, 'error')
+            return
+        
+        fd = cvf_hf.copy()
+        fd.update({'verifyToken': vt, 'cvfAction': 'verify'})
+        rf = session.post('https://www.amazon.fr/ap/cvf/verify', data=fd, headers=get_headers_post(loc), allow_redirects=False, timeout=30)
+        redir = rf.headers.get('Location', '')
+        if redir and not redir.startswith('http'): redir = f'https://www.amazon.fr{redir}'
+        
+        if redir:
+            rev = session.get(redir, headers=get_headers_get(), allow_redirects=True, timeout=30)
+            if 'ap/cvf' in rev.url:
+                set_gen_step(gen_id, 'email_otp')
+                add_gen_log(gen_id, '=== EMAIL OTP ===', 'info')
+                otp = get_otp_from_email(email_addr)
+                if not otp:
+                    add_gen_log(gen_id, 'No OTP', 'error')
+                    set_gen_step(gen_id, 'error')
+                    return
+                add_gen_log(gen_id, f'OTP: {otp}', 'success')
+                soup_otp = BeautifulSoup(rev.text, "html.parser")
+                otp_form = soup_otp.find('form')
+                otp_hf = {inp.get('name'): inp.get('value', '') for inp in otp_form.find_all('input', type='hidden') if inp.get('name')} if otp_form else {}
+                otp_hf.update({'cvfOtp': otp, 'otp': otp, 'code': otp})
+                otp_action = otp_form.get('action', '/ap/cvf/verify') if otp_form else '/ap/cvf/verify'
+                if not otp_action.startswith('http'): otp_action = f'https://www.amazon.fr{otp_action}'
+                ro = session.post(otp_action, data=otp_hf, headers=get_headers_post(rev.url), allow_redirects=True, timeout=30)
+                if 'phone' in ro.text.lower() or 'mobile' in ro.text.lower():
+                    set_gen_step(gen_id, 'sms_otp')
+                    add_gen_log(gen_id, 'SMS needed', 'info')
+                    sms_result = handle_sms_verification(session, ro)
+                    if sms_result == 'success':
+                        save_account_db(email_addr, PASSWORD, dict(session.cookies))
+                        mark_email_used(email_addr)
+                        add_gen_log(gen_id, '=== CREATED! ===', 'success')
+                        set_gen_step(gen_id, 'success')
+                    else:
+                        set_gen_step(gen_id, 'error')
+                else:
+                    save_account_db(email_addr, PASSWORD, dict(session.cookies))
+                    mark_email_used(email_addr)
+                    add_gen_log(gen_id, '=== CREATED! ===', 'success')
+                    set_gen_step(gen_id, 'success')
+            else:
+                save_account_db(email_addr, PASSWORD, dict(session.cookies))
+                mark_email_used(email_addr)
+                add_gen_log(gen_id, '=== CREATED! ===', 'success')
+                set_gen_step(gen_id, 'success')
+        else:
+            add_gen_log(gen_id, 'No redirect', 'error')
+            set_gen_step(gen_id, 'error')
+    except Exception as e:
+        add_gen_log(gen_id, f'Error: {str(e)[:50]}', 'error')
+        set_gen_step(gen_id, 'error')
+    finally:
+        with gen_lock:
+            if gen_id in generations:
+                generations[gen_id]['active'] = False
