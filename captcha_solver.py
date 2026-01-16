@@ -93,12 +93,15 @@ def start_captcha_solver(arkose_iframe_url):
                 print(f"[CAPTCHA] Initial screenshot taken", flush=True)
                 
                 # Boucle principale - traiter les clics et prendre des screenshots
+                # On attend que SOLVED soit True ET que le token soit capturé
                 start_time = time.time()
                 while time.time() - start_time < 300:
                     with solver_lock:
                         if not captcha_solver_state['active']:
                             break
-                        if captcha_solver_state['token']:
+                        # IMPORTANT: attendre solved ET token (comme le bot manuel)
+                        if captcha_solver_state['solved'] and captcha_solver_state['token']:
+                            print(f"[CAPTCHA] Both SOLVED and TOKEN - success!", flush=True)
                             break
                     
                     # Traiter les clics en attente
