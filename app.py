@@ -345,8 +345,8 @@ def run_generation():
         
         # Debug: log page info
         title = soup.find("title")
-        add_log(f"Page title: {title.text[:40] if title else "N/A"}", "info")
-        add_log(f"Final URL: {rg.url[:50]}", "info")
+        add_log(f'Page title: {title.text[:40] if title else "NA"}', 'info')
+        add_log(f'Final URL: {rg.url[:50]}', 'info')
         form = soup.find('form', id='ap_register_form')
         if not form:
             add_log('Form not found!', 'error'); set_step('error'); return
