@@ -116,7 +116,9 @@ def add_log(message, log_type='info'):
     with state_lock:
         generation_state['logs'].append({'time': time.strftime('%H:%M:%S'), 'type': log_type, 'message': message})
         if len(generation_state['logs']) > 100: generation_state['logs'] = generation_state['logs'][-100:]
-    print(f"[{log_type.upper()}] {message}")
+    import sys
+    print(f"[{log_type.upper()}] {message}", flush=True)
+    sys.stdout.flush()
 
 def set_step(step):
     with state_lock: generation_state['step'] = step
