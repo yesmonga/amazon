@@ -740,9 +740,9 @@
                     sendCaptchaToken(data.data.token);
                     return;
                 }
-                // Type 4: solved event
+                // Type 4: solved event - ENVOI AUTOMATIQUE
                 if (data.solved === true || data.event === 'solved' || data.eventId === 'challenge-complete') {
-                    addCaptchaLog('Type 4: Solved event detected!');
+                    addCaptchaLog('CAPTCHA SOLVED! Sending automatically...');
                     challengeComplete = true;
                     
                     // Try to find token in various places
@@ -755,13 +755,17 @@
                         sendCaptchaToken(token);
                         return;
                     } else {
-                        addCaptchaLog('Challenge complete! Token will be sent via button.');
-                        // Show button immediately
-                        var btn = document.getElementById('btn-captcha-done');
-                        if (btn) {
-                            btn.classList.add('active');
-                            btn.textContent = '✅ Captcha résolu - Cliquer pour continuer';
-                            btn.style.background = 'linear-gradient(135deg, #00d26a, #00b359)';
+                        // ENVOI AUTOMATIQUE avec signal CHALLENGE_COMPLETE
+                        addCaptchaLog('No token in event, sending CHALLENGE_COMPLETE signal');
+                        if (!captchaSent) {
+                            captchaSent = true;
+                            fetch('/api/captcha', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({token: 'CHALLENGE_COMPLETE', eventId: data.eventId})
+                            }).then(function(r) {
+                                addCaptchaLog('Signal sent! Status: ' + r.status);
+                            });
                         }
                     }
                 }
@@ -789,14 +793,19 @@
                         sendCaptchaToken(parsed.sessionToken);
                         return;
                     }
-                    // Check for challenge-complete in parsed JSON
+                    // Check for challenge-complete in parsed JSON - ENVOI AUTOMATIQUE
                     if (parsed.eventId === 'challenge-complete') {
-                        addCaptchaLog('Challenge complete detected in JSON!');
+                        addCaptchaLog('CAPTCHA SOLVED (JSON)! Sending automatically...');
                         challengeComplete = true;
-                        var btn = document.getElementById('btn-captcha-done');
-                        if (btn) {
-                            btn.classList.add('active');
-                            btn.textContent = '✅ Captcha résolu - Cliquer pour continuer';
+                        if (!captchaSent) {
+                            captchaSent = true;
+                            fetch('/api/captcha', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({token: 'CHALLENGE_COMPLETE', eventId: 'challenge-complete'})
+                            }).then(function(r) {
+                                addCaptchaLog('Signal sent! Status: ' + r.status);
+                            });
                         }
                     }
                 } catch(e) {}
