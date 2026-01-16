@@ -449,6 +449,7 @@ def submit_otp_code(session, otp_code, response_html):
 
 def run_generation():
     global generation_state
+    MAX_RETRIES = 10
     try:
         add_log('=== STARTING GENERATION ===', 'info')
         set_step('init')
@@ -461,88 +462,107 @@ def run_generation():
             generation_state['customer_name'] = customer_name
         add_log(f'Email: {email_addr}', 'info')
         add_log(f'Name: {customer_name}', 'info')
-        session = requests.Session()
         
-        # Apply random proxy
-        proxy = get_random_proxy()
-        if proxy:
-            session.proxies = proxy
-            add_log(f'Proxy: {proxy["http"].split("@")[1]}', 'info')
-        
-        # STEP 1: GET registration form
-        set_step('get_form')
-        add_log('GET registration form...', 'info')
         url_get = 'https://www.amazon.fr/ap/register?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.fr%2F&openid.assoc_handle=frflex&openid.claimed_id=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select&openid.mode=checkid_setup&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&openid.ns.pape=http%3A%2F%2Fspecs.openid.net%2Fextensions%2Fpape%2F1.0&pageId=frflex'
-        rg = None
-        for attempt in range(3):
-            if not should_continue(email_addr): 
+        
+        # AUTO-RETRY LOOP until CAPTCHA is reached
+        for main_retry in range(MAX_RETRIES):
+            if not should_continue(email_addr):
                 add_log('Generation stopped', 'warning'); return
+            
+            if main_retry > 0:
+                add_log(f'=== RETRY {main_retry}/{MAX_RETRIES} ===', 'warning')
+                time.sleep(2)
+            
+            session = requests.Session()
+            proxy = get_random_proxy()
+            if proxy:
+                session.proxies = proxy
+                add_log(f'Proxy: {proxy["http"].split("@")[1]}', 'info')
+            
+            # STEP 1: GET registration form
+            set_step('get_form')
+            add_log('GET registration form...', 'info')
+            rg = None
             try:
-                # Nouveau proxy à chaque retry
-                if attempt > 0:
-                    proxy = get_random_proxy()
-                    if proxy:
-                        session.proxies = proxy
-                        add_log(f'Retry with proxy: {proxy["http"].split("@")[1]}', 'info')
                 rg = session.get(url_get, headers=get_headers_get(), timeout=30)
                 add_log(f'GET form: {rg.status_code}', 'info')
-                if rg.status_code == 200 and 'ap_register_form' in rg.text: break
             except Exception as e:
                 add_log(f'GET error: {str(e)[:30]}', 'warning')
-                time.sleep(2)
+                continue
+            
+            if not rg or rg.status_code != 200 or 'ap_register_form' not in rg.text:
+                add_log('Form failed, retrying...', 'warning')
+                continue
+            
+            soup = BeautifulSoup(rg.text, "html.parser")
+            title = soup.find("title")
+            add_log(f'Page title: {title.text[:40] if title else "NA"}', 'info')
+            form = soup.find('form', id='ap_register_form')
+            if not form:
+                add_log('Form not found, retrying...', 'warning')
+                continue
+            add_log('Form OK!', 'success')
+            
+            hf = {}
+            for inp in form.find_all('input', type='hidden'):
+                n = inp.get('name'); v = inp.get('value', '')
+                if n: hf[n] = v
+            add_log(f'Hidden fields: {len(hf)}', 'info')
+            
+            action_url = form.get('action')
+            if not action_url.startswith('http'): action_url = f'https://www.amazon.fr{action_url}'
+            
+            # STEP 2: POST registration
+            set_step('post_register')
+            add_log('POST registration...', 'info')
+            pd = hf.copy()
+            pd['email'] = email_addr; pd['customerName'] = customer_name; pd['password'] = PASSWORD; pd['passwordCheck'] = PASSWORD
+            if 'metadata1' not in pd: pd['metadata1'] = ''
+            
+            try:
+                rp = session.post(action_url, data=pd, headers=get_headers_post(url_get), allow_redirects=False, timeout=30)
+                add_log(f'POST: {rp.status_code}, Location: {rp.headers.get("Location", "N/A")[:50]}', 'info')
+            except Exception as e:
+                add_log(f'POST error: {str(e)[:30]}, retrying...', 'warning')
+                continue
+            
+            if rp.status_code != 302:
+                add_log(f'Expected 302, got {rp.status_code}, retrying...', 'warning')
+                continue
+            
+            # STEP 3: Follow CVF redirect
+            set_step('cvf')
+            loc = rp.headers.get('Location', '')
+            add_log(f'CVF redirect: {loc[:60]}', 'info')
+            
+            if '/ap/cvf' not in loc:
+                add_log('No CVF in redirect, retrying...', 'warning')
+                continue
+            
+            if loc.startswith('/'): cvf_url = f'https://www.amazon.fr{loc}'
+            else: cvf_url = loc
+            
+            try:
+                rc = session.get(cvf_url, headers=get_headers_get(), timeout=30)
+                add_log(f'CVF page: {rc.status_code}', 'info')
+            except Exception as e:
+                add_log(f'CVF error: {str(e)[:30]}, retrying...', 'warning')
+                continue
+            
+            am = re.search(r'ARKOSE_LEVEL_(\d)', rc.text)
+            if not am:
+                add_log('No Arkose found, retrying...', 'warning')
+                continue
+            
+            arkose_level = f'ARKOSE_LEVEL_{am.group(1)}'
+            add_log(f'Arkose level: {arkose_level}', 'info')
+            add_log('=== CAPTCHA REACHED! ===', 'success')
+            break
         else:
-            add_log('GET form failed', 'error'); set_step('error'); return
-        if not rg:
-            add_log('No response', 'error'); set_step('error'); return
-        
-        soup = BeautifulSoup(rg.text, "html.parser")
-        
-        # Debug: log page info
-        title = soup.find("title")
-        add_log(f'Page title: {title.text[:40] if title else "NA"}', 'info')
-        add_log(f'Final URL: {rg.url[:50]}', 'info')
-        form = soup.find('form', id='ap_register_form')
-        if not form:
-            add_log('Form not found!', 'error'); set_step('error'); return
-        add_log('Form OK!', 'success')
-        
-        hf = {}
-        for inp in form.find_all('input', type='hidden'):
-            n = inp.get('name'); v = inp.get('value', '')
-            if n: hf[n] = v
-        add_log(f'Hidden fields: {len(hf)}', 'info')
-        
-        action_url = form.get('action')
-        if not action_url.startswith('http'): action_url = f'https://www.amazon.fr{action_url}'
-        
-        # STEP 2: POST registration
-        set_step('post_register')
-        add_log('POST registration...', 'info')
-        pd = hf.copy()
-        pd['email'] = email_addr; pd['customerName'] = customer_name; pd['password'] = PASSWORD; pd['passwordCheck'] = PASSWORD
-        if 'metadata1' not in pd: pd['metadata1'] = ''
-        
-        rp = session.post(action_url, data=pd, headers=get_headers_post(url_get), allow_redirects=False, timeout=30)
-        add_log(f'POST: {rp.status_code}, Location: {rp.headers.get("Location", "N/A")[:50]}', 'info')
-        
-        if rp.status_code != 302:
-            add_log(f'Expected 302, got {rp.status_code}', 'error')
-            add_log(f'Response: {rp.text[:200]}', 'info')
-            set_step('error'); return
-        
-        # STEP 3: Follow CVF redirect
-        set_step('cvf')
-        loc = rp.headers.get('Location', '')
-        add_log(f'CVF redirect: {loc[:60]}', 'info')
-        if loc.startswith('/'): cvf_url = f'https://www.amazon.fr{loc}'
-        else: cvf_url = loc
-        
-        rc = session.get(cvf_url, headers=get_headers_get(), timeout=30)
-        add_log(f'CVF page: {rc.status_code}', 'info')
-        
-        am = re.search(r'ARKOSE_LEVEL_(\d)', rc.text)
-        arkose_level = f'ARKOSE_LEVEL_{am.group(1)}' if am else 'ARKOSE_LEVEL_4'
-        add_log(f'Arkose level: {arkose_level}', 'info')
+            add_log(f'Max retries ({MAX_RETRIES}) reached', 'error')
+            set_step('error')
+            return
         
         soup_cvf = BeautifulSoup(rc.text, 'html.parser')
         fcvf = soup_cvf.find('form', id='cvf-aamation-challenge-form')
