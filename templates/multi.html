@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Amazon Multi-Generator</title>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#ff6b35">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <style>
+        :root {
+            --primary: #ff6b35;
+            --success: #00d26a;
+            --error: #ff4757;
+            --warning: #ffa502;
+            --bg-dark: #0f0f23;
+            --bg-card: #1a1a2e;
+            --bg-light: #252542;
+            --text: #ffffff;
+            --text-muted: #8b8b9e;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 15px;
+            padding-bottom: 100px;
+        }
+        .header {
+            text-align: center;
+            padding: 20px 0;
+        }
+        .header h1 {
+            font-size: 24px;
+            background: linear-gradient(135deg, var(--primary), #ff8f5a);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .controls {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .control-row label {
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+        .count-selector {
+            display: flex;
+            gap: 8px;
+        }
+        .count-btn {
+            width: 44px;
+            height: 44px;
+            border: 2px solid var(--bg-light);
+            border-radius: 12px;
+            background: transparent;
+            color: var(--text);
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .count-btn.active {
+            border-color: var(--primary);
+            background: rgba(255,107,53,0.2);
+            color: var(--primary);
+        }
+        .btn-start-multi {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--primary), #ff8f5a);
+            color: white;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .btn-start-multi:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-stop-all {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 14px;
+            background: var(--error);
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+            display: none;
+        }
+        .generations-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+        }
+        @media (min-width: 600px) {
+            .generations-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        .gen-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 15px;
+            position: relative;
+            overflow: hidden;
+        }
+        .gen-card.success {
+            border: 2px solid var(--success);
+        }
+        .gen-card.error {
+            border: 2px solid var(--error);
+        }
+        .gen-card.captcha {
+            border: 2px solid var(--warning);
+        }
+        .gen-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .gen-id {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-family: monospace;
+        }
+        .gen-status {
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        .gen-status.init { background: var(--bg-light); color: var(--text-muted); }
+        .gen-status.captcha { background: rgba(255,165,2,0.2); color: var(--warning); }
+        .gen-status.verifying { background: rgba(0,210,106,0.2); color: var(--success); }
+        .gen-status.email_otp { background: rgba(0,210,106,0.2); color: var(--success); }
+        .gen-status.sms_otp { background: rgba(0,210,106,0.2); color: var(--success); }
+        .gen-status.success { background: rgba(0,210,106,0.3); color: var(--success); }
+        .gen-status.error { background: rgba(255,71,87,0.2); color: var(--error); }
+        .gen-email {
+            font-size: 13px;
+            color: var(--primary);
+            font-weight: 600;
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+        .gen-captcha {
+            margin: 10px 0;
+            text-align: center;
+        }
+        .gen-captcha img {
+            max-width: 100%;
+            border-radius: 8px;
+            cursor: crosshair;
+        }
+        .gen-captcha-msg {
+            font-size: 12px;
+            color: var(--warning);
+            margin-top: 8px;
+        }
+        .gen-logs {
+            background: var(--bg-dark);
+            border-radius: 8px;
+            padding: 8px;
+            max-height: 120px;
+            overflow-y: auto;
+            font-size: 11px;
+            font-family: monospace;
+        }
+        .gen-log {
+            margin: 2px 0;
+            line-height: 1.4;
+        }
+        .gen-log.info { color: #8b8b9e; }
+        .gen-log.success { color: var(--success); }
+        .gen-log.error { color: var(--error); }
+        .gen-log.warning { color: var(--warning); }
+        .btn-stop-gen {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 28px;
+            height: 28px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255,71,87,0.2);
+            color: var(--error);
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .stats-bar {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .stat {
+            flex: 1;
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        .nav-link {
+            display: block;
+            text-align: center;
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 Multi-Generator</h1>
+    </div>
+    
+    <div class="stats-bar">
+        <div class="stat">
+            <div class="stat-value" id="emails-count">-</div>
+            <div class="stat-label">Emails dispo</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value" id="accounts-count">-</div>
+            <div class="stat-label">Comptes créés</div>
+        </div>
+    </div>
+    
+    <div class="controls">
+        <div class="control-row">
+            <label>Nombre de comptes :</label>
+            <div class="count-selector">
+                <button class="count-btn active" data-count="1">1</button>
+                <button class="count-btn" data-count="2">2</button>
+                <button class="count-btn" data-count="3">3</button>
+                <button class="count-btn" data-count="4">4</button>
+                <button class="count-btn" data-count="5">5</button>
+            </div>
+        </div>
+        <button class="btn-start-multi" id="btn-start" onclick="startMulti()">
+            🚀 Démarrer la génération
+        </button>
+        <button class="btn-stop-all" id="btn-stop-all" onclick="stopAll()">
+            ⏹️ Tout arrêter
+        </button>
+    </div>
+    
+    <div class="generations-grid" id="generations-grid"></div>
+    
+    <a href="/" class="nav-link">← Retour à l'interface simple</a>
+    
+    <script>
+        var selectedCount = 1;
+        var activeGens = {};
+        var pollInterval = null;
+        
+        // Count selector
+        document.querySelectorAll('.count-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.count-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                selectedCount = parseInt(this.dataset.count);
+            });
+        });
+        
+        function loadStats() {
+            fetch('/api/stats').then(r => r.json()).then(data => {
+                document.getElementById('emails-count').textContent = data.emails_remaining;
+                document.getElementById('accounts-count').textContent = data.accounts_created;
+            });
+        }
+        
+        function startMulti() {
+            document.getElementById('btn-start').disabled = true;
+            document.getElementById('btn-stop-all').style.display = 'block';
+            
+            fetch('/api/multi/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({count: selectedCount})
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    data.gen_ids.forEach(gid => {
+                        activeGens[gid] = true;
+                    });
+                    startPolling();
+                }
+            });
+        }
+        
+        function stopAll() {
+            fetch('/api/multi/stop_all', {method: 'POST'});
+            document.getElementById('btn-start').disabled = false;
+            document.getElementById('btn-stop-all').style.display = 'none';
+        }
+        
+        function stopGen(genId) {
+            fetch('/api/multi/stop/' + genId, {method: 'POST'});
+        }
+        
+        function startPolling() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(updateState, 1000);
+            updateState();
+        }
+        
+        function updateState() {
+            fetch('/api/multi/state').then(r => r.json()).then(data => {
+                var grid = document.getElementById('generations-grid');
+                var html = '';
+                var hasActive = false;
+                
+                for (var genId in data.generations) {
+                    var gen = data.generations[genId];
+                    if (gen.active) hasActive = true;
+                    
+                    var cardClass = 'gen-card';
+                    if (gen.step === 'success') cardClass += ' success';
+                    else if (gen.step === 'error') cardClass += ' error';
+                    else if (gen.step === 'captcha') cardClass += ' captcha';
+                    
+                    var statusLabels = {
+                        'init': '⏳ Init',
+                        'get_form': '📄 Form',
+                        'post_register': '📤 Register',
+                        'captcha': '🔐 Captcha',
+                        'verifying': '✅ Vérif',
+                        'email_otp': '📧 OTP Email',
+                        'sms_otp': '📱 OTP SMS',
+                        'success': '✅ Créé!',
+                        'error': '❌ Erreur',
+                        'stopped': '⏹️ Arrêté'
+                    };
+                    
+                    html += '<div class="' + cardClass + '" id="card-' + genId + '">';
+                    if (gen.active) {
+                        html += '<button class="btn-stop-gen" onclick="stopGen(\'' + genId + '\')">✕</button>';
+                    }
+                    html += '<div class="gen-header">';
+                    html += '<span class="gen-id">' + genId + '</span>';
+                    html += '<span class="gen-status ' + gen.step + '">' + (statusLabels[gen.step] || gen.step) + '</span>';
+                    html += '</div>';
+                    
+                    if (gen.email) {
+                        html += '<div class="gen-email">' + gen.email + '</div>';
+                    }
+                    
+                    // Captcha display
+                    if (gen.step === 'captcha' && gen.captcha_screenshot) {
+                        html += '<div class="gen-captcha">';
+                        html += '<img src="data:image/png;base64,' + gen.captcha_screenshot + '" onclick="handleCaptchaClick(event, \'' + genId + '\')">';
+                        html += '<div class="gen-captcha-msg">👆 Clique pour résoudre</div>';
+                        html += '</div>';
+                    }
+                    
+                    // Logs
+                    html += '<div class="gen-logs">';
+                    if (gen.logs) {
+                        gen.logs.slice(-10).forEach(function(log) {
+                            html += '<div class="gen-log ' + log.type + '">[' + log.time + '] ' + log.message + '</div>';
+                        });
+                    }
+                    html += '</div>';
+                    
+                    html += '</div>';
+                }
+                
+                grid.innerHTML = html;
+                
+                // Check if all done
+                if (!hasActive && Object.keys(data.generations).length > 0) {
+                    document.getElementById('btn-start').disabled = false;
+                    loadStats();
+                }
+            });
+        }
+        
+        function handleCaptchaClick(event, genId) {
+            var img = event.target;
+            var rect = img.getBoundingClientRect();
+            var x = Math.round((event.clientX - rect.left) * (img.naturalWidth / rect.width));
+            var y = Math.round((event.clientY - rect.top) * (img.naturalHeight / rect.height));
+            
+            fetch('/api/multi/click/' + genId, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({x: x, y: y})
+            });
+        }
+        
+        // Init
+        loadStats();
+        setInterval(loadStats, 30000);
+    </script>
+</body>
+</html>
