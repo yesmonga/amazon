@@ -22,17 +22,13 @@ IMAP_PASSWORD = os.environ.get('IMAP_PASSWORD', '')
 HEROSMS_API_KEY = os.environ.get('HEROSMS_API_KEY', '')
 HEROSMS_BASE_URL = 'https://hero-sms.com/stubs/handler_api.php'
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
-
-FIRST_NAMES = ['Marie', 'Jean', 'Sophie', 'Pierre', 'Claire', 'Thomas', 'Julie', 'Lucas']
-LAST_NAMES = ['Dupont', 'Martin', 'Durand', 'Bernard', 'Lefevre', 'Moreau', 'Simon', 'Laurent']
+FIRST_NAMES = ['Marie', 'Jean', 'Sophie', 'Pierre', 'Claire', 'Thomas', 'Julie', 'Lucas', 'Emma', 'Hugo']
+LAST_NAMES = ['Dupont', 'Martin', 'Durand', 'Bernard', 'Lefevre', 'Moreau', 'Simon', 'Laurent', 'Michel', 'Garcia']
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'amazon-secret')
 
-generation_state = {
-    'active': False, 'step': 'idle', 'email': None, 'customer_name': None,
-    'logs': [], 'captcha_url': None, 'captcha_token': None, 'session_data': None, 'error': None
-}
+generation_state = {'active': False, 'step': 'idle', 'email': None, 'customer_name': None, 'logs': [], 'captcha_url': None, 'captcha_token': None, 'session_data': None, 'error': None}
 state_lock = threading.Lock()
 
 def get_db():
@@ -45,22 +41,16 @@ def init_db():
     if not conn: return
     try:
         cur = conn.cursor()
-        cur.execute('''CREATE TABLE IF NOT EXISTS emails (id SERIAL PRIMARY KEY, email VARCHAR(255) UNIQUE NOT NULL, used BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-        cur.execute('''CREATE TABLE IF NOT EXISTS accounts (id SERIAL PRIMARY KEY, email VARCHAR(255) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, cookies TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
-        conn.commit()
-        cur.close()
-        conn.close()
+        cur.execute('CREATE TABLE IF NOT EXISTS emails (id SERIAL PRIMARY KEY, email VARCHAR(255) UNIQUE NOT NULL, used BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+        cur.execute('CREATE TABLE IF NOT EXISTS accounts (id SERIAL PRIMARY KEY, email VARCHAR(255) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, cookies TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)')
+        conn.commit(); cur.close(); conn.close()
     except: pass
 
 def get_emails_count():
     conn = get_db()
     if conn:
         try:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) as count FROM emails WHERE used = FALSE")
-            result = cur.fetchone()
-            cur.close()
-            conn.close()
+            cur = conn.cursor(); cur.execute("SELECT COUNT(*) as count FROM emails WHERE used = FALSE"); result = cur.fetchone(); cur.close(); conn.close()
             return result['count'] if result else 0
         except: pass
     return 0
@@ -69,11 +59,7 @@ def get_accounts_count():
     conn = get_db()
     if conn:
         try:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) as count FROM accounts")
-            result = cur.fetchone()
-            cur.close()
-            conn.close()
+            cur = conn.cursor(); cur.execute("SELECT COUNT(*) as count FROM accounts"); result = cur.fetchone(); cur.close(); conn.close()
             return result['count'] if result else 0
         except: pass
     return 0
@@ -82,36 +68,26 @@ def get_random_email():
     conn = get_db()
     if conn:
         try:
-            cur = conn.cursor()
-            cur.execute("SELECT email FROM emails WHERE used = FALSE ORDER BY RANDOM() LIMIT 1")
-            result = cur.fetchone()
-            cur.close()
-            conn.close()
+            cur = conn.cursor(); cur.execute("SELECT email FROM emails WHERE used = FALSE ORDER BY RANDOM() LIMIT 1"); result = cur.fetchone(); cur.close(); conn.close()
             return result['email'] if result else None
         except: pass
     return None
 
-def mark_email_used(email):
+def mark_email_used(email_addr):
     conn = get_db()
     if conn:
         try:
-            cur = conn.cursor()
-            cur.execute("UPDATE emails SET used = TRUE WHERE email = %s", (email,))
-            conn.commit()
-            cur.close()
-            conn.close()
+            cur = conn.cursor(); cur.execute("UPDATE emails SET used = TRUE WHERE email = %s", (email_addr,)); conn.commit(); cur.close(); conn.close()
         except: pass
 
-def save_account_db(email, password, cookies_dict):
+def save_account_db(email_addr, password, cookies_dict):
     conn = get_db()
     if conn:
         try:
             cur = conn.cursor()
             cookies_json = json.dumps(cookies_dict) if cookies_dict else '{}'
-            cur.execute('INSERT INTO accounts (email, password, cookies) VALUES (%s, %s, %s) ON CONFLICT (email) DO UPDATE SET password = EXCLUDED.password, cookies = EXCLUDED.cookies', (email, password, cookies_json))
-            conn.commit()
-            cur.close()
-            conn.close()
+            cur.execute('INSERT INTO accounts (email, password, cookies) VALUES (%s, %s, %s) ON CONFLICT (email) DO UPDATE SET password = EXCLUDED.password, cookies = EXCLUDED.cookies', (email_addr, password, cookies_json))
+            conn.commit(); cur.close(); conn.close()
             return True
         except: pass
     return False
@@ -120,28 +96,18 @@ def add_emails_to_db(emails_list):
     conn = get_db()
     if not conn: return 0
     try:
-        cur = conn.cursor()
-        added = 0
-        for email in emails_list:
-            try:
-                cur.execute("INSERT INTO emails (email) VALUES (%s) ON CONFLICT DO NOTHING", (email,))
-                if cur.rowcount > 0: added += 1
+        cur = conn.cursor(); added = 0
+        for em in emails_list:
+            try: cur.execute("INSERT INTO emails (email) VALUES (%s) ON CONFLICT DO NOTHING", (em,)); added += cur.rowcount
             except: pass
-        conn.commit()
-        cur.close()
-        conn.close()
-        return added
+        conn.commit(); cur.close(); conn.close(); return added
     except: return 0
 
 def get_all_accounts():
     conn = get_db()
     if conn:
         try:
-            cur = conn.cursor()
-            cur.execute("SELECT email, password, cookies, created_at FROM accounts ORDER BY created_at DESC")
-            results = cur.fetchall()
-            cur.close()
-            conn.close()
+            cur = conn.cursor(); cur.execute("SELECT email, password, cookies, created_at FROM accounts ORDER BY created_at DESC"); results = cur.fetchall(); cur.close(); conn.close()
             return results
         except: pass
     return []
@@ -149,12 +115,381 @@ def get_all_accounts():
 def add_log(message, log_type='info'):
     with state_lock:
         generation_state['logs'].append({'time': time.strftime('%H:%M:%S'), 'type': log_type, 'message': message})
-        if len(generation_state['logs']) > 50:
-            generation_state['logs'] = generation_state['logs'][-50:]
+        if len(generation_state['logs']) > 100: generation_state['logs'] = generation_state['logs'][-100:]
 
 def set_step(step):
-    with state_lock:
-        generation_state['step'] = step
+    with state_lock: generation_state['step'] = step
+
+def generate_name():
+    return f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}"
+
+def get_french_number():
+    url = f'{HEROSMS_BASE_URL}?api_key={HEROSMS_API_KEY}&action=getNumberV2&service=am&country=78'
+    try:
+        response = requests.get(url, headers={'accept': '*/*', 'user-agent': 'node'}, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            activation_id = data.get('activationId'); phone_number = str(data.get('phoneNumber', ''))
+            if activation_id and phone_number:
+                phone_without_country = phone_number[2:] if phone_number.startswith('33') else phone_number
+                return {'activation_id': activation_id, 'phone_number': phone_number, 'phone_without_country': phone_without_country}
+    except: pass
+    return None
+
+def set_sms_status_ready(activation_id):
+    url = f'{HEROSMS_BASE_URL}?api_key={HEROSMS_API_KEY}&action=setStatus&status=1&id={activation_id}'
+    try:
+        response = requests.get(url, headers={'accept': '*/*', 'user-agent': 'node'})
+        return response.text.strip() == 'ACCESS_READY'
+    except: return False
+
+def get_sms_otp(activation_id, max_wait=60, check_interval=2):
+    url = f'{HEROSMS_BASE_URL}?api_key={HEROSMS_API_KEY}&action=getStatus&id={activation_id}'
+    start_time = time.time()
+    while time.time() - start_time < max_wait:
+        try:
+            response = requests.get(url, headers={'accept': '*/*', 'user-agent': 'node'})
+            result = response.text.strip()
+            if result.startswith('STATUS_OK:'): return result.split(':')[1]
+        except: pass
+        time.sleep(check_interval)
+    return None
+
+def get_otp_from_email(target_email, max_wait=120, check_interval=5):
+    time.sleep(5)
+    target_local = target_email.split('@')[0].lower()
+    start_time = time.time()
+    while time.time() - start_time < max_wait:
+        try:
+            mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
+            mail.login(IMAP_USER, IMAP_PASSWORD)
+            mail.select('INBOX')
+            _, messages = mail.search(None, '(UNSEEN)')
+            email_ids = messages[0].split() if messages[0] else []
+            if email_ids:
+                for email_id in reversed(email_ids[-20:]):
+                    _, msg_data = mail.fetch(email_id, '(BODY.PEEK[])')
+                    for response_part in msg_data:
+                        if isinstance(response_part, tuple):
+                            msg = email_module.message_from_bytes(response_part[1])
+                            from_addr = msg.get('From', '').lower()
+                            to_addr = msg.get('To', '').lower()
+                            if 'amazon' in from_addr:
+                                body = ''
+                                if msg.is_multipart():
+                                    for part in msg.walk():
+                                        if part.get_content_type() in ['text/plain', 'text/html']:
+                                            payload = part.get_payload(decode=True)
+                                            if payload: body = payload.decode('utf-8', errors='ignore'); break
+                                else:
+                                    payload = msg.get_payload(decode=True)
+                                    if payload: body = payload.decode('utf-8', errors='ignore')
+                                is_for_target = target_email.lower() in to_addr or target_local in body.lower()
+                                if is_for_target:
+                                    otp_match = re.search(r'\b(\d{6})\b', body)
+                                    if otp_match:
+                                        mail.store(email_id, '+FLAGS', '\\Seen')
+                                        mail.logout()
+                                        return otp_match.group(1)
+            mail.logout()
+        except Exception as e: add_log(f'IMAP error: {str(e)[:40]}', 'warning')
+        time.sleep(check_interval)
+    return None
+
+def get_headers_get():
+    return {'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Encoding': 'gzip, deflate, br', 'Accept-Language': 'fr-FR,fr;q=0.9', 'Host': 'www.amazon.fr', 'sec-fetch-dest': 'document', 'sec-fetch-mode': 'navigate', 'sec-fetch-site': 'none', 'sec-fetch-user': '?1', 'upgrade-insecure-requests': '1', 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'}
+
+def get_headers_post(referer):
+    h = get_headers_get()
+    h['content-type'] = 'application/x-www-form-urlencoded'
+    h['origin'] = 'https://www.amazon.fr'
+    h['Referer'] = referer
+    h['sec-fetch-site'] = 'same-origin'
+    return h
+
+def get_headers_firefox():
+    return {'Host': 'www.amazon.fr', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:146.0) Gecko/20100101 Firefox/146.0', 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Accept-Language': 'fr,fr-FR;q=0.8,en-US;q=0.5,en;q=0.3', 'Content-Type': 'application/x-www-form-urlencoded', 'Origin': 'https://www.amazon.fr', 'Referer': 'https://www.amazon.fr/ap/cvf/verify', 'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'same-origin'}
+
+def submit_phone_number(session, phone_without_33, verify_token):
+    post_data = {'openid.assoc_handle': 'frflex', 'openid.mode': 'checkid_setup', 'openid.ns': 'http://specs.openid.net/auth/2.0', 'verifyToken': verify_token, 'cvf_phone_cc': 'FR', 'cvf_phone_num': phone_without_33, 'cvf_action': 'collect'}
+    response = session.post('https://www.amazon.fr/ap/cvf/verify', data=post_data, headers=get_headers_firefox(), allow_redirects=True, timeout=30)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    vi = soup.find('input', {'name': 'verifyToken'})
+    new_vt = vi.get('value', '') if vi else verify_token
+    return response, new_vt
+
+def submit_sms_otp(session, otp_code, verify_token):
+    post_data = [('verificationPageContactType', 'sms'), ('openid.assoc_handle', 'frflex'), ('openid.mode', 'checkid_setup'), ('openid.ns', 'http://specs.openid.net/auth/2.0'), ('verifyToken', verify_token), ('code', otp_code), ('cvf_action', 'code')]
+    headers = get_headers_firefox()
+    response = session.post('https://www.amazon.fr/ap/cvf/verify', data=post_data, headers=headers, allow_redirects=False, timeout=30)
+    if response.status_code == 302:
+        loc1 = response.headers.get('Location', '')
+        if loc1:
+            if loc1.startswith('/'): loc1 = f'https://www.amazon.fr{loc1}'
+            hg = {k: v for k, v in headers.items() if k != 'Content-Type'}
+            r2 = session.get(loc1, headers=hg, allow_redirects=False, timeout=30)
+            if r2.status_code == 302:
+                loc2 = r2.headers.get('Location', '')
+                if 'new_account=1' in loc2:
+                    if loc2.startswith('/'): loc2 = f'https://www.amazon.fr{loc2}'
+                    return session.get(loc2, headers=hg, allow_redirects=True, timeout=30)
+    return response
+
+def remove_phone_number(session):
+    add_log('Suppression numero...', 'info')
+    headers = get_headers_get()
+    try:
+        session.get('https://www.amazon.fr/ax/account/manage', headers=headers, allow_redirects=True, timeout=30)
+        url_1 = 'https://www.amazon.fr/ap/profile/mobilephone?openid.mode=checkid_setup&ref_=ax_am_landing_change_mobile&openid.assoc_handle=frflex&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0&referringAppAction=CNEP'
+        r1 = session.get(url_1, headers=headers, allow_redirects=True, timeout=30)
+        if r1.status_code != 200: return False
+        soup = BeautifulSoup(r1.text, 'html.parser')
+        form = soup.find('form', id='auth-remove-phone-claim')
+        if not form:
+            for f in soup.find_all('form'):
+                if 'mobilephone' in f.get('action', ''): form = f; break
+        if not form: return False
+        hf = {}
+        for inp in form.find_all('input', type='hidden'):
+            n = inp.get('name'); v = inp.get('value', '')
+            if n: hf[n] = v
+        aat = hf.get('appActionToken', ''); ws = hf.get('workflowState', ''); pr = hf.get('prevRID', '')
+        if not aat or not ws: return False
+        pd = {'appActionToken': aat, 'appAction': 'REMOVE_MOBILE_PHONE', 'prevRID': pr, 'workflowState': ws, 'deleteMobilePhone': 'irrelevant'}
+        hp = get_headers_post('https://www.amazon.fr/ap/profile/mobilephone')
+        r2 = session.post('https://www.amazon.fr/ap/profile/mobilephone', data=pd, headers=hp, allow_redirects=False, timeout=30)
+        if r2.status_code != 302: return False
+        loc2 = r2.headers.get('Location', '')
+        if not loc2: return False
+        if loc2.startswith('/'): url_3 = f'https://www.amazon.fr{loc2}'
+        else: url_3 = loc2
+        r3 = session.get(url_3, headers=headers, allow_redirects=False, timeout=30)
+        if r3.status_code != 302: return False
+        loc3 = r3.headers.get('Location', '')
+        if 'SUCCESS_REMOVE_MOBILE_CLAIM' in loc3:
+            add_log('Numero supprime!', 'success')
+            if loc3.startswith('/'): url_4 = f'https://www.amazon.fr{loc3}'
+            else: url_4 = loc3
+            session.get(url_4, headers=headers, timeout=30)
+            return True
+        return False
+    except: return False
+
+def submit_otp_code(session, otp_code, response_html):
+    soup = BeautifulSoup(response_html, 'html.parser')
+    vt = ''
+    fo = soup.find('form', class_='cvf-widget-form')
+    if not fo: fo = soup.find('form', attrs={'action': lambda x: x and 'verify' in str(x)})
+    if fo:
+        vi = fo.find('input', {'name': 'verifyToken'})
+        if vi: vt = vi.get('value', '')
+    if not vt:
+        m = re.search(r'name="verifyToken"\s+value="([^"]+)"', response_html)
+        if m: vt = m.group(1)
+    pd = {'action': 'code', 'openid.assoc_handle': 'frflex', 'openid.mode': 'checkid_setup', 'openid.ns': 'http://specs.openid.net/auth/2.0', 'verifyToken': vt, 'code': otp_code, 'metadata1': '', 'language': 'fr'}
+    return session.post('https://www.amazon.fr/ap/cvf/verify', data=pd, headers=get_headers_post('https://www.amazon.fr/ap/cvf/verify'), allow_redirects=True, timeout=30)
+
+def run_generation():
+    global generation_state
+    try:
+        add_log('=== DEMARRAGE ===', 'info')
+        set_step('init')
+        email_addr = get_random_email()
+        if not email_addr:
+            add_log('Aucun email!', 'error'); set_step('error'); return
+        customer_name = generate_name()
+        with state_lock:
+            generation_state['email'] = email_addr
+            generation_state['customer_name'] = customer_name
+        add_log(f'Email: {email_addr}', 'info')
+        add_log(f'Nom: {customer_name}', 'info')
+        session = requests.Session()
+        set_step('get_form')
+        add_log('GET formulaire...', 'info')
+        url_get = 'https://www.amazon.fr/ap/register?openid.pape.max_auth_age=0&openid.return_to=https%3A%2F%2Fwww.amazon.fr%2F&openid.assoc_handle=frflex&openid.mode=checkid_setup&openid.ns=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0'
+        for attempt in range(3):
+            try:
+                rg = session.get(url_get, headers=get_headers_get(), timeout=30)
+                if rg.status_code == 200: break
+            except: time.sleep(2)
+        else:
+            add_log('Echec GET', 'error'); set_step('error'); return
+        soup = BeautifulSoup(rg.text, 'html.parser')
+        form = soup.find('form', id='ap_register_form')
+        if not form:
+            add_log('Formulaire non trouve', 'error'); set_step('error'); return
+        add_log('Formulaire OK!', 'success')
+        hf = {}
+        for inp in form.find_all('input', type='hidden'):
+            n = inp.get('name'); v = inp.get('value', '')
+            if n: hf[n] = v
+        action_url = form.get('action')
+        if not action_url.startswith('http'): action_url = f'https://www.amazon.fr{action_url}'
+        set_step('post_register')
+        add_log('POST inscription...', 'info')
+        pd = hf.copy()
+        pd['email'] = email_addr; pd['customerName'] = customer_name; pd['password'] = PASSWORD; pd['passwordCheck'] = PASSWORD
+        if 'metadata1' not in pd: pd['metadata1'] = ''
+        rp = session.post(action_url, data=pd, headers=get_headers_post(url_get), allow_redirects=False, timeout=30)
+        if rp.status_code != 302:
+            add_log(f'Pas 302: {rp.status_code}', 'error'); set_step('error'); return
+        set_step('cvf')
+        loc = rp.headers.get('Location', '')
+        add_log('Redirection CVF...', 'info')
+        if loc.startswith('/'): cvf_url = f'https://www.amazon.fr{loc}'
+        else: cvf_url = loc
+        rc = session.get(cvf_url, headers=get_headers_get(), timeout=30)
+        am = re.search(r'ARKOSE_LEVEL_(\d)', rc.text)
+        arkose_level = f'ARKOSE_LEVEL_{am.group(1)}' if am else 'ARKOSE_LEVEL_4'
+        add_log(f'Challenge: {arkose_level}', 'info')
+        soup_cvf = BeautifulSoup(rc.text, 'html.parser')
+        fcvf = soup_cvf.find('form', id='cvf-aamation-challenge-form')
+        cvf_hf = {}
+        if fcvf:
+            for inp in fcvf.find_all('input', type='hidden'):
+                n = inp.get('name'); v = inp.get('value', '')
+                if n: cvf_hf[n] = v
+        set_step('arkose')
+        add_log('GET Arkose...', 'info')
+        session_id = session.cookies.get('session-id', '')
+        ao = {"clientData": json.dumps({"sessionId": session_id, "marketplaceId": "A13V1IB3VIYZZH", "clientUseCase": "/ap/register"}), "challengeType": arkose_level, "locale": "fr-FR", "externalId": ''.join(random.choices(string.ascii_uppercase + string.digits, k=20)), "enableHeaderFooter": False, "enableBypassMechanism": False, "enableModalView": False}
+        ark_url = f'https://www.amazon.fr/aaut/verify/cvf?options={quote(json.dumps(ao))}'
+        ha = get_headers_get(); ha['Referer'] = cvf_url
+        ra = session.get(ark_url, headers=ha, timeout=30)
+        aar = ra.headers.get('amz-aamation-resp', '')
+        ast = ''; csc = ''
+        if aar:
+            try:
+                ad = json.loads(aar); ast = ad.get('sessionToken', ''); csc = ad.get('clientSideContext', '')
+            except: pass
+        soup_a = BeautifulSoup(ra.text, 'html.parser')
+        iframe = soup_a.find('iframe', id='aacb-arkose-frame')
+        aiu = None
+        if iframe: aiu = iframe.get('src', '')
+        if not aiu:
+            m = re.search(r'src="(https://iframe\.arkoselabs\.com/[^"]+)"', ra.text)
+            if m: aiu = m.group(1)
+        if not aiu:
+            add_log('URL Arkose non trouvee', 'error'); set_step('error'); return
+        cm = soup_a.find('meta', attrs={'name': 'csrf-token'})
+        csrf = cm.get('content', '') if cm else ''
+        add_log('Arkose pret!', 'success')
+        with state_lock:
+            generation_state['captcha_url'] = aiu
+            generation_state['session_data'] = {'session': session, 'cvf_url': cvf_url, 'arkose_session_token': ast, 'client_side_context': csc, 'csrf_token': csrf, 'verify_token': cvf_hf.get('verifyToken', ''), 'arkose_options': ao, 'arkose_level': arkose_level, 'session_id': session_id}
+        set_step('waiting_captcha')
+        add_log('=== RESOUS LE CAPTCHA ===', 'warning')
+        sw = time.time()
+        while time.time() - sw < 300:
+            with state_lock:
+                if generation_state['captcha_token']: break
+                if not generation_state['active']: add_log('Annule', 'warning'); return
+            time.sleep(1)
+        with state_lock:
+            ct = generation_state['captcha_token']; sd = generation_state['session_data']
+        if not ct:
+            add_log('Timeout captcha', 'error'); set_step('error'); return
+        add_log('Captcha resolu!', 'success')
+        session = sd['session']
+        set_step('submit_captcha')
+        add_log('Soumission captcha...', 'info')
+        cr = json.dumps({"challengeType": sd['arkose_level'], "data": json.dumps({"sessionToken": ct})})
+        vcu = f"https://www.amazon.fr/aaut/verify/cvf/{sd['arkose_session_token']}?context={quote(sd['client_side_context'], safe='')}&options={quote(json.dumps(sd['arkose_options']))}&response={quote(cr)}"
+        hv = get_headers_get(); hv['anti-csrftoken-a2z'] = sd['csrf_token']; hv['Referer'] = sd['cvf_url']; hv['accept'] = '*/*'
+        rv = session.get(vcu, headers=hv, timeout=30)
+        add_log(f'Captcha: {rv.status_code}', 'info')
+        set_step('finalize')
+        add_log('Finalisation...', 'info')
+        vpd = {'cvf_aamation_response_token': sd['arkose_session_token'], 'cvf_captcha_captcha_action': 'verifyAamationChallenge', 'cvf_aamation_error_code': '', 'clientContext': sd['session_id'], 'openid.assoc_handle': 'frflex', 'openid.mode': 'checkid_setup', 'openid.ns': 'http://specs.openid.net/auth/2.0', 'verifyToken': sd['verify_token']}
+        rf = session.post('https://www.amazon.fr/ap/cvf/verify', data=vpd, headers=get_headers_post(sd['cvf_url']), allow_redirects=False, timeout=30)
+        if rf.status_code == 302:
+            fl = rf.headers.get('Location', '')
+            if fl.startswith('/'): fu = f'https://www.amazon.fr{fl}'
+            else: fu = fl
+            rcl = session.get(fu, headers=get_headers_get(), allow_redirects=False, timeout=30)
+            if rcl.status_code == 302:
+                cr2 = rcl.headers.get('Location', '')
+                if cr2.startswith('/'): cu2 = f'https://www.amazon.fr{cr2}'
+                else: cu2 = cr2
+                rev = session.get(cu2, headers=get_headers_get(), timeout=30)
+            else: rev = rcl
+        else: rev = rf
+        if 'nous avons envoyé un code' in rev.text.lower() or 'cvf' in rev.url:
+            set_step('email_otp')
+            add_log('=== EMAIL OTP ===', 'info')
+            add_log('Attente OTP...', 'info')
+            otp = get_otp_from_email(email_addr, max_wait=120, check_interval=5)
+            if otp:
+                add_log(f'OTP: {otp}', 'success')
+                rotp = submit_otp_code(session, otp, rev.text)
+                if 'Add mobile' in rotp.text or 'mobile number' in rotp.text.lower() or 'cvf_phone' in rotp.text:
+                    add_log('Email OK! SMS...', 'success')
+                    set_step('sms_otp')
+                    sp = BeautifulSoup(rotp.text, 'html.parser')
+                    vti = sp.find('input', {'name': 'verifyToken'})
+                    vts = vti.get('value', '') if vti else ''
+                    if vts:
+                        add_log('Ajout telephone...', 'info')
+                        time.sleep(3)
+                        sms_ok = False
+                        for sa in range(5):
+                            add_log(f'SMS {sa+1}/5...', 'info')
+                            pd = get_french_number()
+                            if not pd: add_log('Pas de numero', 'warning'); time.sleep(2); continue
+                            aid = pd['activation_id']; pw33 = pd['phone_without_country']
+                            add_log(f'+33{pw33}', 'info')
+                            rph, nvt = submit_phone_number(session, pw33, vts)
+                            if 'id="cvf-input-code"' in rph.text:
+                                add_log('Numero OK! SMS...', 'success')
+                                set_sms_status_ready(aid)
+                                sotp = get_sms_otp(aid, max_wait=60, check_interval=2)
+                                if sotp:
+                                    add_log(f'SMS: {sotp}', 'success')
+                                    rsms = submit_sms_otp(session, sotp, nvt)
+                                    add_log('SMS OK!', 'success')
+                                    set_step('remove_phone')
+                                    remove_phone_number(session)
+                                    set_step('save_account')
+                                    cd = dict(session.cookies)
+                                    save_account_db(email_addr, PASSWORD, cd)
+                                    mark_email_used(email_addr)
+                                    add_log('=== COMPTE CREE! ===', 'success')
+                                    add_log(f'{email_addr}', 'success')
+                                    set_step('success')
+                                    sms_ok = True
+                                    break
+                                else: add_log('SMS non recu', 'warning')
+                            elif 'cvf-number-blocked' in rph.text: add_log('Bloque!', 'error'); break
+                            else: add_log('Numero refuse', 'warning')
+                        if not sms_ok:
+                            add_log('SMS echec, save partiel', 'warning')
+                            cd = dict(session.cookies)
+                            save_account_db(email_addr, PASSWORD, cd)
+                            mark_email_used(email_addr)
+                            set_step('success_partial')
+                    else:
+                        add_log('verifyToken manquant', 'warning')
+                        cd = dict(session.cookies)
+                        save_account_db(email_addr, PASSWORD, cd)
+                        mark_email_used(email_addr)
+                        set_step('success_partial')
+                else:
+                    add_log('Compte cree!', 'success')
+                    cd = dict(session.cookies)
+                    save_account_db(email_addr, PASSWORD, cd)
+                    mark_email_used(email_addr)
+                    set_step('success')
+            else:
+                add_log('OTP non recu', 'error')
+                set_step('error')
+        else:
+            add_log('Reponse inattendue', 'error')
+            set_step('error')
+    except Exception as e:
+        add_log(f'Erreur: {str(e)[:80]}', 'error')
+        set_step('error')
+    finally:
+        with state_lock: generation_state['active'] = False
 
 @app.route('/')
 def index():
@@ -171,73 +506,57 @@ def get_stats():
 @app.route('/api/state')
 def get_state():
     with state_lock:
-        return jsonify({
-            'active': generation_state['active'], 'step': generation_state['step'],
-            'email': generation_state['email'], 'customer_name': generation_state['customer_name'],
-            'logs': generation_state['logs'][-20:], 'captcha_url': generation_state['captcha_url'],
-            'error': generation_state['error']
-        })
+        return jsonify({'active': generation_state['active'], 'step': generation_state['step'], 'email': generation_state['email'], 'customer_name': generation_state['customer_name'], 'logs': generation_state['logs'][-30:], 'captcha_url': generation_state['captcha_url'], 'error': generation_state['error']})
 
 @app.route('/api/start', methods=['POST'])
 def start_generation():
     global generation_state
     with state_lock:
-        if generation_state['active']:
-            return jsonify({'error': 'Generation deja en cours'}), 400
-        generation_state = {'active': True, 'step': 'init', 'email': None, 'customer_name': None,
-            'logs': [], 'captcha_url': None, 'captcha_token': None, 'session_data': None, 'error': None}
-    add_log('Generation demarree - En developpement', 'info')
-    set_step('demo')
-    with state_lock:
-        generation_state['active'] = False
-    return jsonify({'success': True, 'message': 'Demo mode'})
+        if generation_state['active']: return jsonify({'error': 'En cours'}), 400
+        generation_state = {'active': True, 'step': 'init', 'email': None, 'customer_name': None, 'logs': [], 'captcha_url': None, 'captcha_token': None, 'session_data': None, 'error': None}
+    thread = threading.Thread(target=run_generation)
+    thread.daemon = True
+    thread.start()
+    return jsonify({'success': True})
 
 @app.route('/api/captcha', methods=['POST'])
 def submit_captcha():
     data = request.get_json()
     token = data.get('token', '')
     if not token: return jsonify({'error': 'Token manquant'}), 400
-    with state_lock:
-        generation_state['captcha_token'] = token
+    with state_lock: generation_state['captcha_token'] = token
     return jsonify({'success': True})
 
 @app.route('/api/stop', methods=['POST'])
 def stop_generation():
     global generation_state
-    with state_lock:
-        generation_state['active'] = False
-        generation_state['step'] = 'stopped'
+    with state_lock: generation_state['active'] = False; generation_state['step'] = 'stopped'
     return jsonify({'success': True})
 
 @app.route('/api/emails', methods=['GET', 'POST'])
 def handle_emails():
     if request.method == 'POST':
         try:
-            emails_text = request.form.get('emails', '') or request.data.decode('utf-8')
-            if 'file' in request.files:
-                emails_text = request.files['file'].read().decode('utf-8')
-            new_emails = [e.strip() for e in emails_text.split('\n') if e.strip() and '@' in e]
-            if not new_emails: return jsonify({'error': 'Aucun email valide'}), 400
-            added = add_emails_to_db(new_emails)
+            et = request.form.get('emails', '') or request.data.decode('utf-8')
+            if 'file' in request.files: et = request.files['file'].read().decode('utf-8')
+            ne = [e.strip() for e in et.split('\n') if e.strip() and '@' in e]
+            if not ne: return jsonify({'error': 'Aucun email'}), 400
+            added = add_emails_to_db(ne)
             return jsonify({'success': True, 'added': added, 'total': get_emails_count()})
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
+        except Exception as e: return jsonify({'error': str(e)}), 500
     return jsonify({'count': get_emails_count()})
 
 @app.route('/api/accounts')
 def get_accounts():
     accounts = get_all_accounts()
-    formatted = []
-    for acc in accounts:
-        formatted.append({'email': acc['email'], 'password': acc['password'], 'cookies': acc['cookies'], 'created_at': str(acc['created_at']) if acc['created_at'] else None})
+    formatted = [{'email': a['email'], 'password': a['password'], 'cookies': a['cookies'], 'created_at': str(a['created_at']) if a['created_at'] else None} for a in accounts]
     return jsonify({'accounts': formatted, 'count': len(formatted)})
 
 @app.route('/manifest.json')
 def manifest():
     return jsonify({"name": "Amazon Generator", "short_name": "AmazonGen", "start_url": "/", "display": "standalone", "background_color": "#0f0f23", "theme_color": "#ff6b35"})
 
-try:
-    init_db()
+try: init_db()
 except: pass
 
 if __name__ == '__main__':
